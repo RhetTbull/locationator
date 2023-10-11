@@ -1,0 +1,6 @@
+py-applescript==1.0.3 
+py2app==0.28.6
+pyobjc-core>=9.2
+pyobjc-framework-CoreLocation
+rumps==0.4.0
+wheel==0.41.2
