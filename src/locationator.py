@@ -23,6 +23,8 @@ from CoreLocation import (
     kCLAuthorizationStatusRestricted,
     kCLLocationAccuracyBest,
     CLGeocoder,
+    CLLocation,
+    CLPlacemark,
 )
 from Foundation import (
     NSURL,
@@ -87,22 +89,26 @@ class Locationator(rumps.App):
         # get list of supported languages for language menu
 
         # menus
-        self.auth_status = rumps.MenuItem("Authorization status", self.on_auth_status)
-        self.current_location = rumps.MenuItem(
+        self.menu_auth_status = rumps.MenuItem("Authorization status", self.on_auth_status)
+        self.menu_current_location = rumps.MenuItem(
             "Get current location", self.on_get_location
         )
-        self.about = rumps.MenuItem(f"About {APP_NAME}", self.on_about)
-        self.quit = rumps.MenuItem(f"Quit {APP_NAME}", self.on_quit)
-        self.start_on_login = rumps.MenuItem(
+        self.menu_reverse_geocode = rumps.MenuItem(
+            "Reverse geocode...", self.on_reverse_geocode
+        )
+        self.menu_about = rumps.MenuItem(f"About {APP_NAME}", self.on_about)
+        self.menu_quit = rumps.MenuItem(f"Quit {APP_NAME}", self.on_quit)
+        self.menu_start_on_login = rumps.MenuItem(
             "Start on login", callback=self.on_start_on_login
         )
         self.menu = [
-            self.auth_status,
-            self.current_location,
+            self.menu_auth_status,
+            self.menu_current_location,
+            self.menu_reverse_geocode,
             None,
-            self.start_on_login,
-            self.about,
-            self.quit,
+            self.menu_start_on_login,
+            self.menu_about,
+            self.menu_quit,
         ]
 
         # stores current location
@@ -136,22 +142,62 @@ class Locationator(rumps.App):
             ok="OK",
         )
 
+    def on_reverse_geocode(self, sender):
+        """Perform reverse geocode of user-supplied latitude/longitude"""
+        # get input from user
+        result = rumps.Window(
+            title="Reverse Geocode",
+            message="Enter latitude and longitude separated by a comma:",
+            default_text="Input here",
+            ok="OK",
+            cancel="Cancel",
+            dimensions=(640, 320),
+        ).run()
+        if result.clicked:
+            lat, lng = result.text.split(",")
+            lat = lat.strip()
+            lng = lng.strip()
+            NSLog(f"{APP_NAME} {__version__} on_reverse_geocode: {lat}, {lng}")
+            geocoder = CLGeocoder.alloc().init()
+            location = CLLocation.alloc().initWithLatitude_longitude_(
+                float(lat), float(lng)
+            )
+            geocoder.reverseGeocodeLocation_completionHandler_(
+                location, self.geocode_completion_handler
+            )
+
+    def geocode_completion_handler(self, placemarks, error):
+        """Handle completion of reverse geocode"""
+        NSLog(f"{APP_NAME} {__version__} geocode_completion_handler: {placemarks}")
+        if error:
+            rumps.alert(
+                title="Reverse Geocode Error",
+                message=f"{APP_NAME} {__version__} reverse geocode error: {error}",
+                ok="OK",
+            )
+        else:
+            placemark = placemarks[0]
+            rumps.alert(
+                title="Reverse Geocode Result",
+                message=f"{APP_NAME} {__version__} reverse geocode result: {placemark}",
+                ok="OK",
+            )
+
     def on_get_location(self, sender):
         """Get current location and display it in a dialog"""
         NSLog(f"{APP_NAME} {__version__} on_get_location")
-        # self.location_manager.setDesiredAccuracy_(kCLLocationAccuracyBest)
+        self.location_manager.setDesiredAccuracy_(kCLLocationAccuracyBest)
         NSLog(f"{APP_NAME} {__version__} on_get_location waiting for location")
         self.event = threading.Event()
         # self.geocoder = CLGeocoder.alloc().init()
-        self.location_manager.startUpdatingLocation()
-        self.event.wait(10)
+        self.location_manager.requestLocation()
+        self.event.wait(15)
         NSLog(f"{APP_NAME} {__version__} on_get_location done: {self._location}")
         rumps.alert(f"Location: {self._location}")
 
     def locationManager_didUpdateLocations_(self, manager, locations):
         """Handle location updates"""
         NSLog(f"{APP_NAME} {__version__} locationManager_didUpdateLocations_")
-        self.location_manager.stopUpdatingLocation()
         NSLog(f"{APP_NAME} {__version__} locationManager_didUpdateLocations_ stopped")
         NSLog(
             f"{APP_NAME} {__version__} locationManager_didUpdateLocations_ {locations}"
@@ -258,8 +304,8 @@ class Locationator(rumps.App):
 
     def on_start_on_login(self, sender):
         """Configure app to start on login or toggle this setting."""
-        self.start_on_login.state = not self.start_on_login.state
-        if self.start_on_login.state:
+        self.menu_start_on_login.state = not self.menu_start_on_login.state
+        if self.menu_start_on_login.state:
             app_path = get_app_path()
             self.log(f"adding app to login items with path {app_path}")
             if APP_NAME not in list_login_items():

@@ -28,6 +28,8 @@ codesign \
   -s - \
   dist/Locationator.app
 
+exit 0
+
 # create installer DMG
 # to add a background image to the DMG, add the following to the create-dmg command:
 #   --background "installer_background.png" \

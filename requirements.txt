@@ -4,3 +4,5 @@ pyobjc-core>=9.2
 pyobjc-framework-CoreLocation
 rumps==0.4.0
 wheel==0.41.2
+fastapi>=0.103.2
+uvicorn>=0.23.2
