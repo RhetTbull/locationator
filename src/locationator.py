@@ -1,30 +1,32 @@
-"""Simple MacOS menu bar / status bar app that automatically perform text detection on screenshots.
-
-Also detects text on clipboard images and image files via the Services menu.
-
-Runs on Catalina (10.15) and later.
+"""Simple MacOS menu bar / status bar app that provides access to reverse geocoding via Location Services.
 """
 
 from __future__ import annotations
 
 import contextlib
 import datetime
+import http.server
+import json
 import plistlib
+import socketserver
+import threading
+import time
+import queue
 
 import objc
 import rumps
 from AppKit import NSApplication, NSPasteboardTypeFileURL
 from CoreLocation import (
+    CLGeocoder,
+    CLLocation,
     CLLocationManager,
+    CLPlacemark,
     kCLAuthorizationStatusAuthorized,
     kCLAuthorizationStatusAuthorizedAlways,
     kCLAuthorizationStatusDenied,
     kCLAuthorizationStatusNotDetermined,
     kCLAuthorizationStatusRestricted,
     kCLLocationAccuracyBest,
-    CLGeocoder,
-    CLLocation,
-    CLPlacemark,
 )
 from Foundation import (
     NSURL,
@@ -40,10 +42,9 @@ from Foundation import (
     NSString,
     NSUTF8StringEncoding,
 )
-import threading
 
 from loginitems import add_login_item, list_login_items, remove_login_item
-from utils import get_app_path, verify_desktop_access
+from utils import get_app_path
 
 # do not manually change the version; use bump2version per the README
 __version__ = "0.0.1"
@@ -57,6 +58,9 @@ CONFIG_FILE = f"{APP_NAME}.plist"
 # optional logging to file if debug enabled (will always log to Console via NSLog)
 LOG_FILE = f"{APP_NAME}.log"
 
+# what port to run the server on
+SERVER_PORT = 8000
+
 AUTH_STATUS = {
     kCLAuthorizationStatusAuthorized: "Authorized",
     kCLAuthorizationStatusAuthorizedAlways: "Authorized Always",
@@ -64,6 +68,83 @@ AUTH_STATUS = {
     kCLAuthorizationStatusNotDetermined: "Not Determined",
     kCLAuthorizationStatusRestricted: "Restricted",
 }
+
+# how long to wait for reverse geocode to complete
+LOCATION_TIMEOUT = 15
+
+# hold global reference to the app so HTTP server can access it
+_global_app = None
+
+
+class Handler(http.server.SimpleHTTPRequestHandler):
+    """Very simple HTTP server to receive reverse geocode requests.
+
+    This should be sufficient for handling local requests but do not
+    expose this server to the internet.
+    """
+
+    def do_GET(self):
+        if self.path == "/":
+            self.send_response(200)
+            self.send_header("Content-type", "text/plain")
+            self.end_headers()
+            self.wfile.write(
+                bytes(
+                    f"Locationator server version {__version__} is running on port {SERVER_PORT}\n",
+                    encoding="utf-8",
+                )
+            )
+
+    def do_PUT(self):
+        global _global_app
+        if self.path == "/reverse_geocode":
+            content_length = int(self.headers["Content-Length"])
+            body = json.loads(self.rfile.read(content_length))
+            _global_app.log(f"do_PUT: {body=}")
+            if "latitude" in body and "longitude" in body:
+                geocode_queue = queue.Queue()
+                _global_app.log(f"do_PUT: {geocode_queue=}, calling reverse_geocode")
+                _global_app.reverse_geocode(
+                    float(body["latitude"]), float(body["longitude"]), geocode_queue
+                )
+
+                try:
+                    success, result = geocode_queue.get(
+                        block=True, timeout=LOCATION_TIMEOUT
+                    )
+                    geocode_queue.task_done()
+                except geocode_queue.Empty:
+                    success = False
+                    result = "Timeout waiting for reverse geocode to complete"
+
+                _global_app.log(f"do_PUT: {success=}, {result=}")
+                if success:
+                    self.send_response(200)
+                    self.send_header("Content-type", "application/json")
+                    self.end_headers()
+                    self.wfile.write(result.encode())
+                else:
+                    self.send_response(500)
+                    self.send_header("Content-type", "text/plain")
+                    self.end_headers()
+                    self.wfile.write(result.encode())
+            else:
+                self.send_response(400)
+                self.send_header("Content-type", "text/plain")
+                self.end_headers()
+                self.wfile.write(b"Bad request")
+
+
+def run_server():
+    """Run the HTTP server"""
+    http.server.ThreadingHTTPServer.allow_reuse_address = True
+    with http.server.ThreadingHTTPServer(("", SERVER_PORT), Handler) as httpd:
+        NSLog(f"{APP_NAME} {__version__} serving at port {SERVER_PORT}")
+        try:
+            httpd.serve_forever()
+        except KeyboardInterrupt:
+            pass
+        httpd.server_close()
 
 
 class Locationator(rumps.App):
@@ -89,13 +170,18 @@ class Locationator(rumps.App):
         # get list of supported languages for language menu
 
         # menus
-        self.menu_auth_status = rumps.MenuItem("Authorization status", self.on_auth_status)
-        self.menu_current_location = rumps.MenuItem(
-            "Get current location", self.on_get_location
+        self.menu_auth_status = rumps.MenuItem(
+            "Authorization status", self.on_auth_status
         )
+        # self.menu_current_location = rumps.MenuItem(
+        #     "Get current location", self.on_get_location
+        # )
         self.menu_reverse_geocode = rumps.MenuItem(
             "Reverse geocode...", self.on_reverse_geocode
         )
+        # self.menu_start_server = rumps.MenuItem(
+        #     "Start server", callback=self.on_start_server
+        # )
         self.menu_about = rumps.MenuItem(f"About {APP_NAME}", self.on_about)
         self.menu_quit = rumps.MenuItem(f"Quit {APP_NAME}", self.on_quit)
         self.menu_start_on_login = rumps.MenuItem(
@@ -103,21 +189,26 @@ class Locationator(rumps.App):
         )
         self.menu = [
             self.menu_auth_status,
-            self.menu_current_location,
             self.menu_reverse_geocode,
+            # self.menu_start_server,
             None,
             self.menu_start_on_login,
             self.menu_about,
             self.menu_quit,
         ]
 
-        # stores current location
-        self._location = None
-
         # load config from plist file and init menu state
         self.load_config()
 
+        # authorize Location Services if needed
         self.authorize()
+
+        # set global reference to self so HTTP server can access it
+        global _global_app
+        _global_app = self
+
+        # start the HTTP server
+        self.start_server()
 
     def authorize(self):
         """Request authorization for Location Services"""
@@ -128,9 +219,7 @@ class Locationator(rumps.App):
 
     def locationManagerDidChangeAuthorization_(self, manager):
         """Called when authorization status changes"""
-        NSLog(
-            f"{APP_NAME} {__version__} authorization status changed: {manager.authorizationStatus()}"
-        )
+        self.log(f"authorization status changed: {manager.authorizationStatus()}")
 
     def on_auth_status(self, sender):
         """Display dialog with authorization status"""
@@ -141,6 +230,18 @@ class Locationator(rumps.App):
             message=f"{APP_NAME} {__version__} authorization status: {status_str} ({status})",
             ok="OK",
         )
+
+    def on_start_server(self, sender):
+        """Start the server"""
+        self.log("on_start_server")
+        self.start_server()
+
+    def start_server(self):
+        # Run the server in a separate thread
+        self.log("start_server")
+        self.server_thread = threading.Thread(target=run_server)
+        self.server_thread.start()
+        self.log(f"start_server done: {self.server_thread}")
 
     def on_reverse_geocode(self, sender):
         """Perform reverse geocode of user-supplied latitude/longitude"""
@@ -157,18 +258,18 @@ class Locationator(rumps.App):
             lat, lng = result.text.split(",")
             lat = lat.strip()
             lng = lng.strip()
-            NSLog(f"{APP_NAME} {__version__} on_reverse_geocode: {lat}, {lng}")
+            self.log(f"on_reverse_geocode: {lat}, {lng}")
             geocoder = CLGeocoder.alloc().init()
             location = CLLocation.alloc().initWithLatitude_longitude_(
                 float(lat), float(lng)
             )
             geocoder.reverseGeocodeLocation_completionHandler_(
-                location, self.geocode_completion_handler
+                location, self._geocode_completion_handler
             )
 
-    def geocode_completion_handler(self, placemarks, error):
+    def _geocode_completion_handler(self, placemarks, error):
         """Handle completion of reverse geocode"""
-        NSLog(f"{APP_NAME} {__version__} geocode_completion_handler: {placemarks}")
+        self.log(f"geocode_completion_handler: {placemarks}")
         if error:
             rumps.alert(
                 title="Reverse Geocode Error",
@@ -183,25 +284,84 @@ class Locationator(rumps.App):
                 ok="OK",
             )
 
-    def on_get_location(self, sender):
-        """Get current location and display it in a dialog"""
-        NSLog(f"{APP_NAME} {__version__} on_get_location")
-        self.location_manager.setDesiredAccuracy_(kCLLocationAccuracyBest)
-        NSLog(f"{APP_NAME} {__version__} on_get_location waiting for location")
-        self.event = threading.Event()
-        # self.geocoder = CLGeocoder.alloc().init()
-        self.location_manager.requestLocation()
-        self.event.wait(15)
-        NSLog(f"{APP_NAME} {__version__} on_get_location done: {self._location}")
-        rumps.alert(f"Location: {self._location}")
+    def reverse_geocode(
+        self, latitude: float, longitude: float, geocode_queue: queue.Queue
+    ):
+        """Perform reverse geocode of latitude/longitude"""
+        self.log(f"reverse_geocode: {latitude}, {longitude}")
+        with objc.autorelease_pool():
+            geocoder = CLGeocoder.alloc().init()
+            location = CLLocation.alloc().initWithLatitude_longitude_(
+                float(latitude), float(longitude)
+            )
+
+            placemark_dict = {}
+            error_str = None
+
+            def geocode_completion_handler(placemarks, error):
+                """Completion handler for reverse geocode"""
+                nonlocal placemark_dict
+                nonlocal error_str
+
+                self.log(f"geocode_completion_handler: {placemarks=}, {error=}")
+                if error:
+                    # return error message as JSON
+                    self.log(f"geocode_completion_handler error: {error}")
+                    error_str = str(error)
+                    geocode_queue.put((False, error_str))
+                    return
+
+                placemark = placemarks.objectAtIndex_(0)
+                self.log(f"geocode_completion_handler result: {placemark}")
+
+                coordinate = placemark.location().coordinate()
+                timezone = placemark.timeZone()
+                postalAddress = placemark.postalAddress()
+                areasOfInterest = placemark.areasOfInterest()
+                postal_address = {}
+                
+                #  Contacts.CNPostalAddress
+                # TODO: postalAddress and areasOfInterest need to be decoded
+                #   "postalAddress": "<CNPostalAddress: 0x60000074edf0: street=1001 Stadium Dr, subLocality=Century, city=Inglewood, subAdministrativeArea=Los Angeles County, state=CA, postalCode=90305, country=United States, countryCode=US>",
+                #   "areasOfInterest": "(\n    \"SoFi Stadium\"\n)",
+
+                placemark_dict = {
+                    "location": (
+                        coordinate.latitude,
+                        coordinate.longitude,
+                    ),
+                    "name": str(placemark.name()),
+                    "thoroughfare": str(placemark.thoroughfare()),
+                    "subThoroughfare": str(placemark.subThoroughfare()),
+                    "locality": str(placemark.locality()),
+                    "subLocality": str(placemark.subLocality()),
+                    "administrativeArea": str(placemark.administrativeArea()),
+                    "subAdministrativeArea": str(placemark.subAdministrativeArea()),
+                    "postalCode": str(placemark.postalCode()),
+                    "ISOcountryCode": str(placemark.ISOcountryCode()),
+                    "country": str(placemark.country()),
+                    "postalAddress": str(placemark.postalAddress()),
+                    "inlandWater": str(placemark.inlandWater()),
+                    "ocean": str(placemark.ocean()),
+                    "areasOfInterest": str(placemark.areasOfInterest()),
+                    "timeZoneName": str(timezone.name()),
+                    "timeZoneAbbreviation": str(timezone.abbreviation()),
+                    "timeZoneSecondsFromGMT": timezone.secondsFromGMT(),
+                }
+                self.log(f"geocode_completion_handler: {placemark_dict=}")
+                geocode_queue.put((True, json.dumps(placemark_dict)))
+
+            # start the request then wait for completion
+            geocoder.reverseGeocodeLocation_completionHandler_(
+                location, geocode_completion_handler
+            )
+
+            # self.log(f"reverse_geocode: {error_str=}, {placemark_dict=}")
+            # return error_str is None, json.dumps(placemark_dict)
 
     def locationManager_didUpdateLocations_(self, manager, locations):
         """Handle location updates"""
-        NSLog(f"{APP_NAME} {__version__} locationManager_didUpdateLocations_")
-        NSLog(f"{APP_NAME} {__version__} locationManager_didUpdateLocations_ stopped")
-        NSLog(
-            f"{APP_NAME} {__version__} locationManager_didUpdateLocations_ {locations}"
-        )
+        self.log(f"locationManager_didUpdateLocations_ {locations}")
         current_location = locations.objectAtIndex_(0)
         # geocoder = CLGeocoder.alloc().init()
         # geocoder.reverseGeocodeLocation_completionHandler_(
@@ -211,7 +371,7 @@ class Locationator(rumps.App):
         self.event.set()
 
     def locationManager_didFailWithError_(self, manager, error):
-        NSLog(f"{APP_NAME} {__version__} locationManager_didFailWithError_: {error}")
+        self.log(f"locationManager_didFailWithError_: {error}")
         self.event.set()
 
     #         - (void)locationManager:(CLLocationManager *)manager didUpdateLocations:(NSArray *)locations {
