@@ -54,7 +54,7 @@ AUTH_STATUS = {
     kCLAuthorizationStatusRestricted: "Restricted",
 }
 
-# how long to wait for reverse geocode to complete
+# how long to wait in seconds for reverse geocode to complete
 LOCATION_TIMEOUT = 15
 
 # hold global reference to the app so HTTP server can access it
