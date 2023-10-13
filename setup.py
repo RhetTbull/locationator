@@ -16,7 +16,8 @@ APP = ["src/locationator.py"]
 # Include additional python modules here; probably not the best way to do this
 # but I couldn't figure out how else to get py2app to include modules in the src/ folder
 DATA_FILES = [
-    "src/icon.png",
+    "src/icon_white.png",
+    "src/icon_black.png",
     "src/loginitems.py",
     "src/utils.py",
 ]
