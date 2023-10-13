@@ -14,6 +14,7 @@ import threading
 import objc
 import rumps
 from AppKit import NSPasteboardTypeFileURL
+from Contacts import CNPostalAddress
 from CoreLocation import (
     CLGeocoder,
     CLLocation,
@@ -307,41 +308,7 @@ class Locationator(rumps.App):
 
                 placemark = placemarks.objectAtIndex_(0)
                 self.log(f"geocode_completion_handler result: {placemark}")
-
-                coordinate = placemark.location().coordinate()
-                timezone = placemark.timeZone()
-                postalAddress = placemark.postalAddress()
-                areasOfInterest = placemark.areasOfInterest()
-                postal_address = {}
-
-                #  Contacts.CNPostalAddress
-                # TODO: postalAddress and areasOfInterest need to be decoded
-                #   "postalAddress": "<CNPostalAddress: 0x60000074edf0: street=1001 Stadium Dr, subLocality=Century, city=Inglewood, subAdministrativeArea=Los Angeles County, state=CA, postalCode=90305, country=United States, countryCode=US>",
-                #   "areasOfInterest": "(\n    \"SoFi Stadium\"\n)",
-
-                placemark_dict = {
-                    "location": (
-                        coordinate.latitude,
-                        coordinate.longitude,
-                    ),
-                    "name": str(placemark.name()),
-                    "thoroughfare": str(placemark.thoroughfare()),
-                    "subThoroughfare": str(placemark.subThoroughfare()),
-                    "locality": str(placemark.locality()),
-                    "subLocality": str(placemark.subLocality()),
-                    "administrativeArea": str(placemark.administrativeArea()),
-                    "subAdministrativeArea": str(placemark.subAdministrativeArea()),
-                    "postalCode": str(placemark.postalCode()),
-                    "ISOcountryCode": str(placemark.ISOcountryCode()),
-                    "country": str(placemark.country()),
-                    "postalAddress": str(placemark.postalAddress()),
-                    "inlandWater": str(placemark.inlandWater()),
-                    "ocean": str(placemark.ocean()),
-                    "areasOfInterest": str(placemark.areasOfInterest()),
-                    "timeZoneName": str(timezone.name()),
-                    "timeZoneAbbreviation": str(timezone.abbreviation()),
-                    "timeZoneSecondsFromGMT": timezone.secondsFromGMT(),
-                }
+                placemark_dict = placemark_to_dict(placemark)
                 self.log(f"geocode_completion_handler: {placemark_dict=}")
                 geocode_queue.put((True, json.dumps(placemark_dict)))
 
@@ -462,6 +429,71 @@ class Locationator(rumps.App):
         """Display a notification."""
         self.log(f"notification: {title} - {subtitle} - {message}")
         rumps.notification(title, subtitle, message)
+
+
+def placemark_to_dict(placemark: CLPlacemark) -> dict:
+    """Convert a CLPlacemark to a dict
+
+    Args:
+        placemark: CLPlacemark object to convert
+
+    Returns: dict containing the placemark data
+    """
+    coordinate = placemark.location().coordinate()
+    timezone = placemark.timeZone()
+    postalAddress = postal_address_to_dict(placemark.postalAddress())
+
+    areasOfInterest = []
+    for i in range(placemark.areasOfInterest().count()):
+        areasOfInterest.append(str(placemark.areasOfInterest().objectAtIndex_(i)))
+
+    placemark_dict = {
+        "location": (
+            coordinate.latitude,
+            coordinate.longitude,
+        ),
+        "name": str(placemark.name()),
+        "thoroughfare": str(placemark.thoroughfare()),
+        "subThoroughfare": str(placemark.subThoroughfare()),
+        "locality": str(placemark.locality()),
+        "subLocality": str(placemark.subLocality()),
+        "administrativeArea": str(placemark.administrativeArea()),
+        "subAdministrativeArea": str(placemark.subAdministrativeArea()),
+        "postalCode": str(placemark.postalCode()),
+        "ISOcountryCode": str(placemark.ISOcountryCode()),
+        "country": str(placemark.country()),
+        "postalAddress": postalAddress,
+        "inlandWater": str(placemark.inlandWater()),
+        "ocean": str(placemark.ocean()),
+        "areasOfInterest": areasOfInterest,
+        "timeZoneName": str(timezone.name()),
+        "timeZoneAbbreviation": str(timezone.abbreviation()),
+        "timeZoneSecondsFromGMT": int(timezone.secondsFromGMT()),
+    }
+
+    return placemark_dict
+
+
+def postal_address_to_dict(postalAddress: CNPostalAddress) -> dict:
+    """Convert a CNPostalAddress to a dict
+
+    Args:
+        postalAddress: CNPostalAddress object to convert
+
+    Returns: dict containing the postalAddress data
+    """
+    postalAddress_dict = {
+        "street": str(postalAddress.street()),
+        "city": str(postalAddress.city()),
+        "state": str(postalAddress.state()),
+        "country": str(postalAddress.country()),
+        "postalCode": str(postalAddress.postalCode()),
+        "ISOCountryCode": str(postalAddress.ISOCountryCode()),
+        "subAdministrativeArea": str(postalAddress.subAdministrativeArea()),
+        "subLocality": str(postalAddress.subLocality()),
+    }
+
+    return postalAddress_dict
 
 
 def serviceSelector(fn):

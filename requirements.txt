@@ -1,7 +1,8 @@
 py-applescript==1.0.3 
 py2app==0.28.6
 pyobjc-core>=9.2
-pyobjc-framework-CoreLocation
+pyobjc-framework-CoreLocation>=9.2
+pyobjc-framework-Contacts>=9.2
 rumps==0.4.0
 wheel==0.41.2
 fastapi>=0.103.2
