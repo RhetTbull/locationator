@@ -10,7 +10,7 @@ Why this app? Apple's Location Services API is great and I wanted to be able to 
 
 Download the latest release DMG from the [releases page](https://github.com/RhetTbull/locationator/releases) and use the DMG to install the app. Once installed, launch the app and grant it the necessary permissions.
 
-To launch Locationator the first time you'll need to right-click on the app icon and select "Open" otherwise you may get a warning about unknown developer as the app is not signed with an Apple Developer ID.
+To launch Locationator the first time you'll need to right-click on the app icon and select "Open" otherwise you may get a warning about unknown developer as the app is not signed with an Apple Developer ID. You may need to do this twice.
 
 Alternatively, to build from source:
 
@@ -42,6 +42,10 @@ This endpoint provides the current version and the port on which the server is r
 *Note*: examples below use the [httpie](https://httpie.io/) command line tool for making HTTP requests. You can also use curl or any other tool that can make HTTP requests.
 
 `http get localhost:8000`
+
+or
+
+`curl -X GET http://localhost:8000/`
 
 ```http
 HTTP/1.0 200 OK
@@ -77,6 +81,10 @@ Receive geocode queries from the client. This endpoint accepts PUT requests with
 **Success Response Example**:
 
 `http put localhost:8000/reverse_geocode latitude=33.953636 longitude=-118.338950`
+
+or
+
+`curl -X PUT -H "Content-Type: application/json" -d '{"latitude":33.953636, "longitude":-118.338950}' http://localhost:8000/reverse_geocode`
 
 ```http
 HTTP/1.0 200 OK
