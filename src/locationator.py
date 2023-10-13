@@ -35,7 +35,7 @@ from utils import get_app_path
 __version__ = "0.0.1"
 
 APP_NAME = "Locationator"
-APP_ICON = "icon.png"
+APP_ICON = "icon_white.png"
 
 # where to store saved state, will reside in Application Support/APP_NAME
 CONFIG_FILE = f"{APP_NAME}.plist"
@@ -134,11 +134,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         return success, result
 
 
-def run_server():
+def run_server(port: int = SERVER_PORT):
     """Run the HTTP server"""
     http.server.ThreadingHTTPServer.allow_reuse_address = True
-    with http.server.ThreadingHTTPServer(("", SERVER_PORT), Handler) as httpd:
-        NSLog(f"{APP_NAME} {__version__} serving at port {SERVER_PORT}")
+    with http.server.ThreadingHTTPServer(("", port), Handler) as httpd:
+        NSLog(f"{APP_NAME} {__version__} serving at port {port}")
         try:
             httpd.serve_forever()
         except KeyboardInterrupt:
@@ -154,6 +154,10 @@ class Locationator(rumps.App):
 
         # set "debug" to true in the config file to enable debug logging
         self._debug = False
+
+        # what port to run the server on
+        # set "port" in the config file to change this
+        self.port = SERVER_PORT
 
         # pause / resume text detection
         self._paused = False
@@ -232,7 +236,7 @@ class Locationator(rumps.App):
     def start_server(self):
         # Run the server in a separate thread
         self.log("start_server")
-        self.server_thread = threading.Thread(target=run_server)
+        self.server_thread = threading.Thread(target=run_server, args=[self.port])
         self.server_thread.start()
         self.log(f"start_server done: {self.server_thread}")
 
@@ -245,7 +249,7 @@ class Locationator(rumps.App):
             default_text="Input here",
             ok="OK",
             cancel="Cancel",
-            dimensions=(640, 320),
+            dimensions=(640, 240),
         ).run()
 
         if result.clicked:
@@ -350,7 +354,7 @@ class Locationator(rumps.App):
         if not self.config:
             # file didn't exist or was malformed, create a new one
             # initialize config with default values
-            self.config = {"debug": False}
+            self.config = {"debug": False, "port": SERVER_PORT}
         self.log(f"loaded config: {self.config}")
 
         # update the menu state to match the loaded config
@@ -367,6 +371,7 @@ class Locationator(rumps.App):
         # self.confirmation.state = self.config.get("confirmation", False)
         # self.qrcodes.state = self.config.get("detect_qrcodes", False)
         self._debug = self.config.get("debug", False)
+        self.port = self.config.get("port", SERVER_PORT)
         # self.start_on_login.state = self.config.get("start_on_login", False)
 
         # save config because it may have been updated with default values
@@ -387,6 +392,7 @@ class Locationator(rumps.App):
         # self.config["confirmation"] = self.confirmation.state
         # self.config["detect_qrcodes"] = self.qrcodes.state
         self.config["debug"] = self._debug
+        self.config["port"] = self.port
         # self.config["start_on_login"] = self.start_on_login.state
         with self.open(CONFIG_FILE, "wb+") as f:
             plistlib.dump(self.config, f)
@@ -410,7 +416,7 @@ class Locationator(rumps.App):
         """Display about dialog."""
         rumps.alert(
             title=f"About {APP_NAME}",
-            message=f"{APP_NAME} Version {__version__}\n\n"
+            message=f"{APP_NAME} Version {__version__} on port {self.port}\n\n"
             f"{APP_NAME} is a simple utility to perform reverse geocoding.\n\n"
             f"{APP_NAME} is open source and licensed under the MIT license.\n\n"
             "Copyright 2023 by Rhet Turnbull\n"
