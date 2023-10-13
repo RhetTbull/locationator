@@ -8,7 +8,7 @@ Why this app? Apple's Location Services API is great and I wanted to be able to 
 
 ## Installation
 
-Download the latest release from the [releases page]() and use the DMG to install the app. Once installed, launch the app and grant it the necessary permissions.
+Download the latest release DMG from the [releases page](https://github.com/RhetTbull/locationator/releases) and use the DMG to install the app. Once installed, launch the app and grant it the necessary permissions.
 
 To launch Locationator the first time you'll need to right-click on the app icon and select "Open" otherwise you may get a warning about unknown developer as the app is not signed with an Apple Developer ID.
 
