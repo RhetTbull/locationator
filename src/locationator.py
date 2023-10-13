@@ -32,7 +32,7 @@ from loginitems import add_login_item, list_login_items, remove_login_item
 from utils import get_app_path, stringify
 
 # do not manually change the version; use bump2version per the README
-__version__ = "0.0.1"
+__version__ = "0.0.2"
 
 APP_NAME = "Locationator"
 APP_ICON_WHITE = "icon_white.png"
