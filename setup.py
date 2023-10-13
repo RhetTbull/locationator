@@ -31,27 +31,23 @@ PLIST = {
     "CFBundleShortVersionString": __version__,
     # CFBundleVersion is the build version (here we use the same value as the short version)
     "CFBundleVersion": __version__,
-    # NSDesktopFolderUsageDescription is the message that appears when the app asks for permission to access the Desktop folder
-    "NSDesktopFolderUsageDescription": "Locationator needs access to your Desktop folder to detect new screenshots. "
-    "If you have changed the default location for screenshots, "
-    "you will also need to grant Locationator full disk access in "
-    "System Preferences > Security & Privacy > Privacy > Full Disk Access.",
     # NSAppleEventsUsageDescription is the message that appears when the app asks for permission to send Apple events
     "NSAppleEventsUsageDescription": "Locationator needs permission to send AppleScript events to add itself to Login Items.",
+    # NSLocationWhenInUseUsageDescription is the message that appears when the app asks for permission to use location services
     "NSLocationWhenInUseUsageDescription": "Locationator needs access to your location to detect your current location and to perform reverse geocoding.",
     # NSServices is a list of services that the app provides that will appear in the Services menu
     # For more information on NSServices, see: https://developer.apple.com/documentation/bundleresources/information_property_list/nsservices?language=objc
-    "NSServices": [
-        {
-            "NSMenuItem": {"default": "Detect text with Locationator"},
-            "NSMessage": "detectTextInImage",
-            "NSPortName": "Locationator",
-            "NSUserData": "detectTextInImage",
-            "NSRequiredContext": {"NSTextContent": "FilePath"},
-            "NSSendTypes": ["NSPasteboardTypeURL"],
-            "NSSendFileTypes": ["public.image"],
-        },
-    ],
+    # "NSServices": [
+    #     {
+    #         "NSMenuItem": {"default": "Detect text with Locationator"},
+    #         "NSMessage": "detectTextInImage",
+    #         "NSPortName": "Locationator",
+    #         "NSUserData": "detectTextInImage",
+    #         "NSRequiredContext": {"NSTextContent": "FilePath"},
+    #         "NSSendTypes": ["NSPasteboardTypeURL"],
+    #         "NSSendFileTypes": ["public.image"],
+    #     },
+    # ],
 }
 
 # Options for py2app

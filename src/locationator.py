@@ -8,14 +8,12 @@ import datetime
 import http.server
 import json
 import plistlib
-import socketserver
-import threading
-import time
 import queue
+import threading
 
 import objc
 import rumps
-from AppKit import NSApplication, NSPasteboardTypeFileURL
+from AppKit import NSPasteboardTypeFileURL
 from CoreLocation import (
     CLGeocoder,
     CLLocation,
@@ -26,22 +24,8 @@ from CoreLocation import (
     kCLAuthorizationStatusDenied,
     kCLAuthorizationStatusNotDetermined,
     kCLAuthorizationStatusRestricted,
-    kCLLocationAccuracyBest,
 )
-from Foundation import (
-    NSURL,
-    NSLog,
-    NSMetadataQuery,
-    NSMetadataQueryDidFinishGatheringNotification,
-    NSMetadataQueryDidStartGatheringNotification,
-    NSMetadataQueryDidUpdateNotification,
-    NSMetadataQueryGatheringProgressNotification,
-    NSNotificationCenter,
-    NSObject,
-    NSPredicate,
-    NSString,
-    NSUTF8StringEncoding,
-)
+from Foundation import NSURL, NSLog, NSObject, NSString, NSUTF8StringEncoding
 
 from loginitems import add_login_item, list_login_items, remove_login_item
 from utils import get_app_path
@@ -83,6 +67,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     expose this server to the internet.
     """
 
+    # Would be nice to use FastAPI but I couldn't make that work when
+    # called from the Rumps app.
+
     def do_GET(self):
         if self.path == "/":
             self.send_response(200)
@@ -102,21 +89,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             body = json.loads(self.rfile.read(content_length))
             _global_app.log(f"do_PUT: {body=}")
             if "latitude" in body and "longitude" in body:
-                geocode_queue = queue.Queue()
-                _global_app.log(f"do_PUT: {geocode_queue=}, calling reverse_geocode")
-                _global_app.reverse_geocode(
-                    float(body["latitude"]), float(body["longitude"]), geocode_queue
-                )
-
-                try:
-                    success, result = geocode_queue.get(
-                        block=True, timeout=LOCATION_TIMEOUT
-                    )
-                    geocode_queue.task_done()
-                except geocode_queue.Empty:
-                    success = False
-                    result = "Timeout waiting for reverse geocode to complete"
-
+                success, result = self.handle_reverse_geocode(body)
                 _global_app.log(f"do_PUT: {success=}, {result=}")
                 if success:
                     self.send_response(200)
@@ -133,6 +106,31 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 self.send_header("Content-type", "text/plain")
                 self.end_headers()
                 self.wfile.write(b"Bad request")
+
+    def handle_reverse_geocode(self, body: dict) -> tuple[bool, str]:
+        """Perform reverse geocode of latitude/longitude in body."""
+        geocode_queue = queue.Queue()
+        success = False
+        try:
+            latitude = float(body["latitude"])
+            longitude = float(body["longitude"])
+            success = True
+        except ValueError as e:
+            result = f"Invalid latitude/longitude: {e}"
+
+        if not success:
+            return success, result
+
+        _global_app.log(f"do_PUT: {geocode_queue=}, calling reverse_geocode")
+        _global_app.reverse_geocode(latitude, longitude, geocode_queue)
+
+        try:
+            success, result = geocode_queue.get(block=True, timeout=LOCATION_TIMEOUT)
+            geocode_queue.task_done()
+        except geocode_queue.Empty:
+            success = False
+            result = "Timeout waiting for reverse geocode to complete"
+        return success, result
 
 
 def run_server():
@@ -170,27 +168,20 @@ class Locationator(rumps.App):
         # get list of supported languages for language menu
 
         # menus
-        self.menu_auth_status = rumps.MenuItem(
-            "Authorization status", self.on_auth_status
-        )
-        # self.menu_current_location = rumps.MenuItem(
-        #     "Get current location", self.on_get_location
+        # self.menu_auth_status = rumps.MenuItem(
+        #     "Authorization status", self.on_auth_status
         # )
         self.menu_reverse_geocode = rumps.MenuItem(
             "Reverse geocode...", self.on_reverse_geocode
         )
-        # self.menu_start_server = rumps.MenuItem(
-        #     "Start server", callback=self.on_start_server
-        # )
         self.menu_about = rumps.MenuItem(f"About {APP_NAME}", self.on_about)
         self.menu_quit = rumps.MenuItem(f"Quit {APP_NAME}", self.on_quit)
         self.menu_start_on_login = rumps.MenuItem(
             "Start on login", callback=self.on_start_on_login
         )
         self.menu = [
-            self.menu_auth_status,
+            # self.menu_auth_status,
             self.menu_reverse_geocode,
-            # self.menu_start_server,
             None,
             self.menu_start_on_login,
             self.menu_about,
@@ -200,8 +191,12 @@ class Locationator(rumps.App):
         # load config from plist file and init menu state
         self.load_config()
 
+        # initialize Location Services
+        self.location_manager = CLLocationManager.alloc().init()
+        self.location_manager.setDelegate_(self)
+
         # authorize Location Services if needed
-        self.authorize()
+        # self.authorize()
 
         # set global reference to self so HTTP server can access it
         global _global_app
@@ -212,10 +207,7 @@ class Locationator(rumps.App):
 
     def authorize(self):
         """Request authorization for Location Services"""
-        with objc.autorelease_pool():
-            self.location_manager = CLLocationManager.alloc().init()
-            self.location_manager.setDelegate_(self)
-            self.location_manager.requestAlwaysAuthorization()
+        self.location_manager.requestAlwaysAuthorization()
 
     def locationManagerDidChangeAuthorization_(self, manager):
         """Called when authorization status changes"""
@@ -254,7 +246,26 @@ class Locationator(rumps.App):
             cancel="Cancel",
             dimensions=(640, 320),
         ).run()
+
         if result.clicked:
+
+            def _geocode_completion_handler(placemarks, error):
+                """Handle completion of reverse geocode"""
+                self.log(f"geocode_completion_handler: {placemarks}")
+                if error:
+                    rumps.alert(
+                        title="Reverse Geocode Error",
+                        message=f"{APP_NAME} {__version__} reverse geocode error: {error}",
+                        ok="OK",
+                    )
+                else:
+                    placemark = placemarks[0]
+                    rumps.alert(
+                        title="Reverse Geocode Result",
+                        message=f"{APP_NAME} {__version__} reverse geocode result: {placemark}",
+                        ok="OK",
+                    )
+
             lat, lng = result.text.split(",")
             lat = lat.strip()
             lng = lng.strip()
@@ -264,24 +275,7 @@ class Locationator(rumps.App):
                 float(lat), float(lng)
             )
             geocoder.reverseGeocodeLocation_completionHandler_(
-                location, self._geocode_completion_handler
-            )
-
-    def _geocode_completion_handler(self, placemarks, error):
-        """Handle completion of reverse geocode"""
-        self.log(f"geocode_completion_handler: {placemarks}")
-        if error:
-            rumps.alert(
-                title="Reverse Geocode Error",
-                message=f"{APP_NAME} {__version__} reverse geocode error: {error}",
-                ok="OK",
-            )
-        else:
-            placemark = placemarks[0]
-            rumps.alert(
-                title="Reverse Geocode Result",
-                message=f"{APP_NAME} {__version__} reverse geocode result: {placemark}",
-                ok="OK",
+                location, _geocode_completion_handler
             )
 
     def reverse_geocode(
@@ -292,7 +286,7 @@ class Locationator(rumps.App):
         with objc.autorelease_pool():
             geocoder = CLGeocoder.alloc().init()
             location = CLLocation.alloc().initWithLatitude_longitude_(
-                float(latitude), float(longitude)
+                latitude, longitude
             )
 
             placemark_dict = {}
@@ -319,7 +313,7 @@ class Locationator(rumps.App):
                 postalAddress = placemark.postalAddress()
                 areasOfInterest = placemark.areasOfInterest()
                 postal_address = {}
-                
+
                 #  Contacts.CNPostalAddress
                 # TODO: postalAddress and areasOfInterest need to be decoded
                 #   "postalAddress": "<CNPostalAddress: 0x60000074edf0: street=1001 Stadium Dr, subLocality=Century, city=Inglewood, subAdministrativeArea=Los Angeles County, state=CA, postalCode=90305, country=United States, countryCode=US>",
@@ -359,40 +353,9 @@ class Locationator(rumps.App):
             # self.log(f"reverse_geocode: {error_str=}, {placemark_dict=}")
             # return error_str is None, json.dumps(placemark_dict)
 
-    def locationManager_didUpdateLocations_(self, manager, locations):
-        """Handle location updates"""
-        self.log(f"locationManager_didUpdateLocations_ {locations}")
-        current_location = locations.objectAtIndex_(0)
-        # geocoder = CLGeocoder.alloc().init()
-        # geocoder.reverseGeocodeLocation_completionHandler_(
-        #     current_location, self.geocode_completion_handler
-        # )
-        self._location = current_location
-        self.event.set()
-
-    def locationManager_didFailWithError_(self, manager, error):
-        self.log(f"locationManager_didFailWithError_: {error}")
-        self.event.set()
-
-    #         - (void)locationManager:(CLLocationManager *)manager didUpdateLocations:(NSArray *)locations {
-    #     CLLocation *currentLocation = [locations lastObject];
-    #     [locationManager stopUpdatingLocation];
-
-    #     [geocoder reverseGeocodeLocation:currentLocation completionHandler:^(NSArray *placemarks, NSError *error) {
-    #       if (error == nil && placemarks.count > 0) {
-    #           CLPlacemark *placemark = placemarks[0];
-    #           // Do something with the placemark
-    #       }
-    #       else {
-    #           NSLog(@"Couldn't reverse geocode: %@", error);
-    #       }
-    #     }];
-    # }
-
     def log(self, msg: str):
         """Log a message to unified log."""
         NSLog(f"{APP_NAME} {__version__} {msg}")
-
         # if debug set in config, also log to file
         # file will be created in Application Support folder
         if self._debug:
@@ -420,7 +383,7 @@ class Locationator(rumps.App):
         if not self.config:
             # file didn't exist or was malformed, create a new one
             # initialize config with default values
-            self.config = {}
+            self.config = {"debug": False}
         self.log(f"loaded config: {self.config}")
 
         # update the menu state to match the loaded config
@@ -436,7 +399,7 @@ class Locationator(rumps.App):
         # self.detect_clipboard.state = self.config.get("detect_clipboard", True)
         # self.confirmation.state = self.config.get("confirmation", False)
         # self.qrcodes.state = self.config.get("detect_qrcodes", False)
-        # self._debug = self.config.get("debug", False)
+        self._debug = self.config.get("debug", False)
         # self.start_on_login.state = self.config.get("start_on_login", False)
 
         # save config because it may have been updated with default values
@@ -456,7 +419,7 @@ class Locationator(rumps.App):
         # self.config["detect_clipboard"] = self.detect_clipboard.state
         # self.config["confirmation"] = self.confirmation.state
         # self.config["detect_qrcodes"] = self.qrcodes.state
-        # self.config["debug"] = self._debug
+        self.config["debug"] = self._debug
         # self.config["start_on_login"] = self.start_on_login.state
         with self.open(CONFIG_FILE, "wb+") as f:
             plistlib.dump(self.config, f)
@@ -491,6 +454,8 @@ class Locationator(rumps.App):
     def on_quit(self, sender):
         """Cleanup before quitting."""
         self.log("quitting")
+        if self.location_manager:
+            self.location_manager.dealloc()
         rumps.quit_application()
 
     def notification(self, title, subtitle, message):
@@ -510,70 +475,70 @@ def ErrorValue(e):
     return e
 
 
-class ServiceProvider(NSObject):
-    """Service provider class to handle messages from the Services menu
+# class ServiceProvider(NSObject):
+#     """Service provider class to handle messages from the Services menu
 
-    Initialize with ServiceProvider.alloc().initWithApp_(app)
-    """
+#     Initialize with ServiceProvider.alloc().initWithApp_(app)
+#     """
 
-    app: Locationator | None = None
+#     app: Locationator | None = None
 
-    def initWithApp_(self, app: Locationator):
-        self = objc.super(ServiceProvider, self).init()
-        self.app = app
-        return self
+#     def initWithApp_(self, app: Locationator):
+#         self = objc.super(ServiceProvider, self).init()
+#         self.app = app
+#         return self
 
-    @serviceSelector
-    def detectTextInImage_userData_error_(
-        self, pasteboard, userdata, error
-    ) -> str | None:
-        """Detect text in an image on the clipboard.
+#     @serviceSelector
+#     def detectTextInImage_userData_error_(
+#         self, pasteboard, userdata, error
+#     ) -> str | None:
+#         """Detect text in an image on the clipboard.
 
-        This method will be called by the Services menu when the user selects "Detect text with Locationator".
-        It is specified in the setup.py NSMessage attribute. The method name in NSMessage is `detectTextInImage`
-        but the actual Objective-C signature is `detectTextInImage:userData:error:` hence the matching underscores
-        in the python method name.
+#         This method will be called by the Services menu when the user selects "Detect text with Locationator".
+#         It is specified in the setup.py NSMessage attribute. The method name in NSMessage is `detectTextInImage`
+#         but the actual Objective-C signature is `detectTextInImage:userData:error:` hence the matching underscores
+#         in the python method name.
 
-        Args:
-            pasteboard: NSPasteboard object containing the URLs of the image files to process
-            userdata: Unused, passed by the Services menu as value of NSUserData attribute in setup.py;
-                can be used to pass additional data to the service if needed
-            error: Unused; in Objective-C, error is a pointer to an NSError object that will be set if an error occurs;
-                when using pyobjc, errors are returned as str values and the actual error argument is ignored.
+#         Args:
+#             pasteboard: NSPasteboard object containing the URLs of the image files to process
+#             userdata: Unused, passed by the Services menu as value of NSUserData attribute in setup.py;
+#                 can be used to pass additional data to the service if needed
+#             error: Unused; in Objective-C, error is a pointer to an NSError object that will be set if an error occurs;
+#                 when using pyobjc, errors are returned as str values and the actual error argument is ignored.
 
-        Returns:
-            error: str value containing the error message if an error occurs, otherwise None
+#         Returns:
+#             error: str value containing the error message if an error occurs, otherwise None
 
-        Note: because this method is explicitly invoked by the user via the Services menu, it will
-        be called and files processed even if the app is paused.
+#         Note: because this method is explicitly invoked by the user via the Services menu, it will
+#         be called and files processed even if the app is paused.
 
-        """
-        self.app.log("detectTextInImage_userData_error_ called via Services menu")
+#         """
+#         self.app.log("detectTextInImage_userData_error_ called via Services menu")
 
-        try:
-            for item in pasteboard.pasteboardItems():
-                # pasteboard will contain one or more URLs to image files passed by the Services menu
-                pb_url_data = item.dataForType_(NSPasteboardTypeFileURL)
-                pb_url = NSURL.URLWithString_(
-                    NSString.alloc().initWithData_encoding_(
-                        pb_url_data, NSUTF8StringEncoding
-                    )
-                )
-                self.app.log(f"processing file from Services menu: {pb_url.path()}")
-                image = Quartz.CIImage.imageWithContentsOfURL_(pb_url)
-                detected_text = self.app.process_image(image)
-                if self.app.show_notification.state:
-                    self.app.notification(
-                        title="Processed Image",
-                        subtitle=f"{pb_url.path()}",
-                        message=f"Detected text: {detected_text}"
-                        if detected_text
-                        else "No text detected",
-                    )
-        except Exception as e:
-            return ErrorValue(e)
+#         try:
+#             for item in pasteboard.pasteboardItems():
+#                 # pasteboard will contain one or more URLs to image files passed by the Services menu
+#                 pb_url_data = item.dataForType_(NSPasteboardTypeFileURL)
+#                 pb_url = NSURL.URLWithString_(
+#                     NSString.alloc().initWithData_encoding_(
+#                         pb_url_data, NSUTF8StringEncoding
+#                     )
+#                 )
+#                 self.app.log(f"processing file from Services menu: {pb_url.path()}")
+#                 image = Quartz.CIImage.imageWithContentsOfURL_(pb_url)
+#                 detected_text = self.app.process_image(image)
+#                 if self.app.show_notification.state:
+#                     self.app.notification(
+#                         title="Processed Image",
+#                         subtitle=f"{pb_url.path()}",
+#                         message=f"Detected text: {detected_text}"
+#                         if detected_text
+#                         else "No text detected",
+#                     )
+#         except Exception as e:
+#             return ErrorValue(e)
 
-        return None
+#         return None
 
 
 if __name__ == "__main__":
