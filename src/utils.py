@@ -1,12 +1,19 @@
 """macOS specific utilities used by Textinator"""
 
+from __future__ import annotations
+
 import platform
-from typing import Tuple
+from typing import Any, Tuple
 
 import objc
 from Foundation import NSBundle, NSDesktopDirectory, NSFileManager, NSUserDomainMask
 
 __all__ = ["get_app_path", "get_mac_os_version", "verify_desktop_access"]
+
+
+def stringify(value: Any) -> str:
+    """Convert value to str or "" if value is None"""
+    return str(value) if value is not None else ""
 
 
 def verify_desktop_access():

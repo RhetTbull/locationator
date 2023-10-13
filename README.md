@@ -23,7 +23,7 @@ Alternatively, to build from source:
 
 ## Usage
 
-Locationator server is a very simple HTTP server for handling local requests. It supports two endpoints, `GET /` and `PUT /reverse_geocode`.
+Locationator server is a very simple HTTP server for handling local requests. It supports three endpoints, `GET /`, `GET /reverse_geocode`, and `PUT /reverse_geocode`.
 
 >*Please note*, this server is for local use and NOT intended to be exposed to the internet. The server does not support any authentication or authorization and is intended to be used on a local machine only.
 
@@ -56,6 +56,76 @@ Server: SimpleHTTP/0.6 Python/3.11.6
 Locationator server version 0.0.1 is running on port 8000
 ```
 
+### GET /reverse_geocode
+
+Receive geocode queries from the client. This endpoint accepts GET requests with latitude and longitude data as query parameters, performs reverse geocoding and returns the result.
+
+**URL** : `/reverse_geocode?latitude=double&longitude=double`
+
+**Method** : `GET`
+
+**Query Parameters** :
+
+|Parameter|Type|Description|
+|---|---|---|
+|`latitude`|Double|Latitude of the location to be reverse geocoded|
+|`longitude`|Double|Longitude of the location to be reverse geocoded|
+
+**Response format** :
+
+- On Success, Content-type is application/json and a response code of 200 with a JSON object containing the reverse geocoding result is returned
+- On Failure, a description of the error is returned with a suitable HTTP response code
+
+**Success Response Example**:
+
+`http GET "http://localhost:8000/reverse_geocode?latitude=33.953636&longitude=-118.338950"`
+
+or
+
+`curl -X GET "http://localhost:8000/reverse_geocode?latitude=33.953636&longitude=-118.338950"`
+
+```http
+HTTP/1.0 200 OK
+Content-type: application/json
+Date: Fri, 13 Oct 2023 19:32:24 GMT
+Server: SimpleHTTP/0.6 Python/3.11.6
+
+{
+    "ISOcountryCode": "US",
+    "administrativeArea": "CA",
+    "areasOfInterest": [
+        "SoFi Stadium"
+    ],
+    "country": "United States",
+    "inlandWater": "",
+    "locality": "Inglewood",
+    "location": [
+        33.953636,
+        -118.33895
+    ],
+    "name": "SoFi Stadium",
+    "ocean": "",
+    "postalAddress": {
+        "ISOCountryCode": "US",
+        "city": "Inglewood",
+        "country": "United States",
+        "postalCode": "90305",
+        "state": "CA",
+        "street": "1001 Stadium Dr",
+        "subAdministrativeArea": "Los Angeles County",
+        "subLocality": "Century"
+    },
+    "postalCode": "90305",
+    "subAdministrativeArea": "Los Angeles County",
+    "subLocality": "Century",
+    "subThoroughfare": "1001",
+    "thoroughfare": "Stadium Dr",
+    "timeZoneAbbreviation": "PDT",
+    "timeZoneName": "America/Los_Angeles",
+    "timeZoneSecondsFromGMT": -25200
+}
+```
+
 ### PUT /reverse_geocode
 
 Receive geocode queries from the client. This endpoint accepts PUT requests with latitude and longitude data in the body of the request, performs reverse geocoding and returns the result.
@@ -73,7 +143,7 @@ Receive geocode queries from the client. This endpoint accepts PUT requests with
 |`latitude`|Double|Latitude of the location to be reverse geocoded|
 |`longitude`|Double|Longitude of the location to be reverse geocoded|
 
-**Response format** : 
+**Response format** :
 
 - On Success, Content-type is application/json and a response code of 200 with a JSON object containing the reverse geocoding result is returned
 - On Failure, a description of the error is returned with a suitable HTTP response code

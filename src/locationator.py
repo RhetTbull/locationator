@@ -29,7 +29,7 @@ from CoreLocation import (
 from Foundation import NSURL, NSLog, NSObject, NSString, NSUTF8StringEncoding
 
 from loginitems import add_login_item, list_login_items, remove_login_item
-from utils import get_app_path
+from utils import get_app_path, stringify
 
 # do not manually change the version; use bump2version per the README
 __version__ = "0.0.1"
@@ -76,15 +76,23 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     def do_GET(self):
         if self.path == "/":
-            self.send_response(200)
-            self.send_header("Content-type", "text/plain")
-            self.end_headers()
-            self.wfile.write(
-                bytes(
-                    f"Locationator server version {__version__} is running on port {SERVER_PORT}\n",
-                    encoding="utf-8",
-                )
+            self.send_success(
+                f"Locationator server version {__version__} is running on port {SERVER_PORT}\n",
+                content_type="text/plain",
             )
+        elif self.path.startswith("/reverse_geocode"):
+            query_dict = self.get_query_args()
+            if "latitude" not in query_dict or "longitude" not in query_dict:
+                self.send_bad_request("Missing latitude or longitude query arg")
+                return
+            success, result = self.reverse_geocode(
+                float(query_dict["latitude"]), float(query_dict["longitude"])
+            )
+            _global_app.log(f"do_PUT: {success=}, {result=}")
+            if success:
+                self.send_success(result)
+            else:
+                self.send_server_error(result)
 
     def do_PUT(self):
         global _global_app
@@ -93,27 +101,46 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             body = json.loads(self.rfile.read(content_length))
             _global_app.log(f"do_PUT: {body=}")
             if "latitude" in body and "longitude" in body:
-                success, result = self.handle_reverse_geocode(body)
+                success, result = self.handle_reverse_geocode_put(body)
                 _global_app.log(f"do_PUT: {success=}, {result=}")
                 if success:
-                    self.send_response(200)
-                    self.send_header("Content-type", "application/json")
-                    self.end_headers()
-                    self.wfile.write(result.encode())
+                    self.send_success(result)
                 else:
-                    self.send_response(500)
-                    self.send_header("Content-type", "text/plain")
-                    self.end_headers()
-                    self.wfile.write(result.encode())
+                    self.send_server_error(result)
             else:
-                self.send_response(400)
-                self.send_header("Content-type", "text/plain")
-                self.end_headers()
-                self.wfile.write(b"Bad request")
+                self.send_bad_request("Missing latitude or longitude in body")
 
-    def handle_reverse_geocode(self, body: dict) -> tuple[bool, str]:
+    def send_bad_request(self, error_str: str):
+        """Send bad request"""
+        self.send_response(400)
+        self.send_header("Content-type", "text/plain")
+        self.end_headers()
+        self.wfile.write(b"Bad request: " + error_str.encode())
+
+    def send_success(self, result: str, content_type: str = "application/json"):
+        """Send success response"""
+        self.send_response(200)
+        self.send_header("Content-type", content_type)
+        self.end_headers()
+        self.wfile.write(result.encode())
+
+    def send_server_error(self, result: str):
+        """Send server error response"""
+        self.send_response(500)
+        self.send_header("Content-type", "text/plain")
+        self.end_headers()
+        self.wfile.write(result.encode())
+
+    def get_query_args(self) -> dict[str, str]:
+        """Parse query string and return dict of query args."""
+        try:
+            query = self.path.split("?")[1]
+            return dict(qc.split("=") for qc in query.split("&"))
+        except IndexError:
+            return {}
+
+    def handle_reverse_geocode_put(self, body: dict) -> tuple[bool, str]:
         """Perform reverse geocode of latitude/longitude in body."""
-        geocode_queue = queue.Queue()
         success = False
         try:
             latitude = float(body["latitude"])
@@ -125,7 +152,12 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if not success:
             return success, result
 
-        _global_app.log(f"do_PUT: {geocode_queue=}, calling reverse_geocode")
+        return self.reverse_geocode(latitude, longitude)
+
+    def reverse_geocode(self, latitude: float, longitude: float) -> tuple[bool, str]:
+        """Perform reverse geocode of latitude/longitude."""
+        geocode_queue = queue.Queue()
+        _global_app.log(f"reverse_geocode: {geocode_queue=}, calling reverse_geocode")
         _global_app.reverse_geocode(latitude, longitude, geocode_queue)
 
         try:
@@ -331,9 +363,6 @@ class Locationator(rumps.App):
                 location, geocode_completion_handler
             )
 
-            # self.log(f"reverse_geocode: {error_str=}, {placemark_dict=}")
-            # return error_str is None, json.dumps(placemark_dict)
-
     def on_app_icon(self, sender):
         """Change menu_icon"""
         self.clear_app_icon_state()
@@ -502,8 +531,9 @@ def placemark_to_dict(placemark: CLPlacemark) -> dict:
     postalAddress = postal_address_to_dict(placemark.postalAddress())
 
     areasOfInterest = []
-    for i in range(placemark.areasOfInterest().count()):
-        areasOfInterest.append(str(placemark.areasOfInterest().objectAtIndex_(i)))
+    if placemark.areasOfInterest():
+        for i in range(placemark.areasOfInterest().count()):
+            areasOfInterest.append(str(placemark.areasOfInterest().objectAtIndex_(i)))
 
     placemark_dict = {
         "location": (
@@ -511,21 +541,21 @@ def placemark_to_dict(placemark: CLPlacemark) -> dict:
             coordinate.longitude,
         ),
         "name": str(placemark.name()),
-        "thoroughfare": str(placemark.thoroughfare()),
-        "subThoroughfare": str(placemark.subThoroughfare()),
-        "locality": str(placemark.locality()),
-        "subLocality": str(placemark.subLocality()),
-        "administrativeArea": str(placemark.administrativeArea()),
-        "subAdministrativeArea": str(placemark.subAdministrativeArea()),
-        "postalCode": str(placemark.postalCode()),
-        "ISOcountryCode": str(placemark.ISOcountryCode()),
-        "country": str(placemark.country()),
+        "thoroughfare": stringify(placemark.thoroughfare()),
+        "subThoroughfare": stringify(placemark.subThoroughfare()),
+        "locality": stringify(placemark.locality()),
+        "subLocality": stringify(placemark.subLocality()),
+        "administrativeArea": stringify(placemark.administrativeArea()),
+        "subAdministrativeArea": stringify(placemark.subAdministrativeArea()),
+        "postalCode": stringify(placemark.postalCode()),
+        "ISOcountryCode": stringify(placemark.ISOcountryCode()),
+        "country": stringify(placemark.country()),
         "postalAddress": postalAddress,
-        "inlandWater": str(placemark.inlandWater()),
-        "ocean": str(placemark.ocean()),
+        "inlandWater": stringify(placemark.inlandWater()),
+        "ocean": stringify(placemark.ocean()),
         "areasOfInterest": areasOfInterest,
-        "timeZoneName": str(timezone.name()),
-        "timeZoneAbbreviation": str(timezone.abbreviation()),
+        "timeZoneName": stringify(timezone.name()),
+        "timeZoneAbbreviation": stringify(timezone.abbreviation()),
         "timeZoneSecondsFromGMT": int(timezone.secondsFromGMT()),
     }
 
@@ -540,15 +570,27 @@ def postal_address_to_dict(postalAddress: CNPostalAddress) -> dict:
 
     Returns: dict containing the postalAddress data
     """
+    if not postalAddress:
+        return {
+            "street": "",
+            "city": "",
+            "state": "",
+            "country": "",
+            "postalCode": "",
+            "ISOCountryCode": "",
+            "subAdministrativeArea": "",
+            "subLocality": "",
+        }
+
     postalAddress_dict = {
-        "street": str(postalAddress.street()),
-        "city": str(postalAddress.city()),
-        "state": str(postalAddress.state()),
-        "country": str(postalAddress.country()),
-        "postalCode": str(postalAddress.postalCode()),
-        "ISOCountryCode": str(postalAddress.ISOCountryCode()),
-        "subAdministrativeArea": str(postalAddress.subAdministrativeArea()),
-        "subLocality": str(postalAddress.subLocality()),
+        "street": stringify(postalAddress.street()),
+        "city": stringify(postalAddress.city()),
+        "state": stringify(postalAddress.state()),
+        "country": stringify(postalAddress.country()),
+        "postalCode": stringify(postalAddress.postalCode()),
+        "ISOCountryCode": stringify(postalAddress.ISOCountryCode()),
+        "subAdministrativeArea": stringify(postalAddress.subAdministrativeArea()),
+        "subLocality": stringify(postalAddress.subLocality()),
     }
 
     return postalAddress_dict
