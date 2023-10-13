@@ -35,7 +35,10 @@ from utils import get_app_path
 __version__ = "0.0.1"
 
 APP_NAME = "Locationator"
-APP_ICON = "icon_white.png"
+APP_ICON_WHITE = "icon_white.png"
+APP_ICON_BLACK = "icon_black.png"
+APP_ICON = APP_ICON_WHITE
+MENU_ICON_DEFAULT = "white"
 
 # where to store saved state, will reside in Application Support/APP_NAME
 CONFIG_FILE = f"{APP_NAME}.plist"
@@ -184,10 +187,16 @@ class Locationator(rumps.App):
         self.menu_start_on_login = rumps.MenuItem(
             "Start on login", callback=self.on_start_on_login
         )
+        # add cascading menu for menu icon white/black
+        self.menu_icon = rumps.MenuItem("Icon")
+        self.menu_icon_white = rumps.MenuItem("White", callback=self.on_app_icon)
+        self.menu_icon_black = rumps.MenuItem("Black", callback=self.on_app_icon)
+
         self.menu = [
             # self.menu_auth_status,
             self.menu_reverse_geocode,
             None,
+            [self.menu_icon, [self.menu_icon_white, self.menu_icon_black]],
             self.menu_start_on_login,
             self.menu_about,
             self.menu_quit,
@@ -201,6 +210,7 @@ class Locationator(rumps.App):
         self.location_manager.setDelegate_(self)
 
         # authorize Location Services if needed
+        # TODO: doesn't appear to be needed for using reverse geocode
         # self.authorize()
 
         # set global reference to self so HTTP server can access it
@@ -324,6 +334,40 @@ class Locationator(rumps.App):
             # self.log(f"reverse_geocode: {error_str=}, {placemark_dict=}")
             # return error_str is None, json.dumps(placemark_dict)
 
+    def on_app_icon(self, sender):
+        """Change menu_icon"""
+        self.clear_app_icon_state()
+        sender.state = True
+        self.set_app_icon_state(self.get_app_icon_state())
+        self.save_config()
+
+    def clear_app_icon_state(self):
+        """Clear menu_icon menu state"""
+        self.menu_icon_white.state = False
+        self.menu_icon_black.state = False
+
+    def get_app_icon_state(self):
+        """Get menu_icon state."""
+        if self.menu_icon_white.state:
+            return "white"
+        elif self.menu_icon_black.state:
+            return "black"
+        else:
+            return MENU_ICON_DEFAULT
+
+    def set_app_icon_state(self, menu_icon):
+        """Set menu_icon state."""
+        self.log(f"set_app_icon_state: {menu_icon}")
+        self.clear_app_icon_state()
+        if menu_icon == "white":
+            self.menu_icon_white.state = True
+            self.icon = APP_ICON_WHITE
+        elif menu_icon == "black":
+            self.menu_icon_black.state = True
+            self.icon = APP_ICON_BLACK
+        else:
+            raise ValueError(f"Unknown menu_icon state: {menu_icon}")
+
     def log(self, msg: str):
         """Log a message to unified log."""
         NSLog(f"{APP_NAME} {__version__} {msg}")
@@ -354,14 +398,18 @@ class Locationator(rumps.App):
         if not self.config:
             # file didn't exist or was malformed, create a new one
             # initialize config with default values
-            self.config = {"debug": False, "port": SERVER_PORT}
+            self.config = {
+                "debug": False,
+                "port": SERVER_PORT,
+                "menu_icon_color": MENU_ICON_DEFAULT,
+            }
         self.log(f"loaded config: {self.config}")
 
         # update the menu state to match the loaded config
         # self.append.state = self.config.get("append", False)
         # self.linebreaks.state = self.config.get("linebreaks", True)
         # self.show_notification.state = self.config.get("notification", True)
-        # self.set_confidence_state(self.config.get("confidence", CONFIDENCE_DEFAULT))
+        # self.set_app_icon_state(self.config.get("menu_icon", menu_icon_DEFAULT))
         # self.recognition_language = self.config.get(
         #     "language", self.recognition_language
         # )
@@ -372,6 +420,8 @@ class Locationator(rumps.App):
         # self.qrcodes.state = self.config.get("detect_qrcodes", False)
         self._debug = self.config.get("debug", False)
         self.port = self.config.get("port", SERVER_PORT)
+        self.set_app_icon_state(self.config.get("menu_icon_color", MENU_ICON_DEFAULT))
+
         # self.start_on_login.state = self.config.get("start_on_login", False)
 
         # save config because it may have been updated with default values
@@ -385,7 +435,7 @@ class Locationator(rumps.App):
         # self.config["linebreaks"] = self.linebreaks.state
         # self.config["append"] = self.append.state
         # self.config["notification"] = self.show_notification.state
-        # self.config["confidence"] = self.get_confidence_state()
+        # self.config["menu_icon"] = self.get_app_icon_state()
         # self.config["language"] = self.recognition_language
         # self.config["always_detect_english"] = self.language_english.state
         # self.config["detect_clipboard"] = self.detect_clipboard.state
@@ -393,6 +443,8 @@ class Locationator(rumps.App):
         # self.config["detect_qrcodes"] = self.qrcodes.state
         self.config["debug"] = self._debug
         self.config["port"] = self.port
+        self.config["menu_icon_color"] = self.get_app_icon_state()
+
         # self.config["start_on_login"] = self.start_on_login.state
         with self.open(CONFIG_FILE, "wb+") as f:
             plistlib.dump(self.config, f)
