@@ -8,8 +8,6 @@ from typing import Any, Tuple
 import objc
 from Foundation import NSBundle, NSDesktopDirectory, NSFileManager, NSUserDomainMask
 
-__all__ = ["get_app_path", "get_mac_os_version", "verify_desktop_access"]
-
 
 def stringify(value: Any) -> str:
     """Convert value to str or "" if value is None"""
@@ -71,3 +69,21 @@ def get_app_path() -> str:
     # Note: This must be called from an app bundle built with py2app or you'll get
     # the path of the python interpreter instead of the actual app
     return NSBundle.mainBundle().bundlePath()
+
+
+def validate_latitude(latitude: str | float) -> bool:
+    """Return True if latitude is valid, False otherwise"""
+    try:
+        latitude = float(latitude)
+        return -90 <= latitude <= 90
+    except ValueError:
+        return False
+
+
+def validate_longitude(longitude: str | float) -> bool:
+    """Return True if longitude is valid, False otherwise"""
+    try:
+        longitude = float(longitude)
+        return -180 <= longitude <= 180
+    except ValueError:
+        return False

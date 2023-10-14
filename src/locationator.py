@@ -29,7 +29,7 @@ from Foundation import NSURL, NSLog, NSObject, NSString, NSUTF8StringEncoding
 
 from loginitems import add_login_item, list_login_items, remove_login_item
 from server import run_server
-from utils import get_app_path, stringify
+from utils import get_app_path, stringify, validate_latitude, validate_longitude
 
 # do not manually change the version; use bump2version per the README
 __version__ = "0.0.3"
@@ -165,11 +165,11 @@ class Locationator(rumps.App):
         # get input from user
         result = rumps.Window(
             title="Reverse Geocode",
-            message="Enter latitude and longitude separated by a comma:",
-            default_text="Input here",
+            message="Enter latitude and longitude separated by a comma or space in the text box below:",
+            default_text="",
             ok="OK",
             cancel="Cancel",
-            dimensions=(640, 240),
+            dimensions=(320, 40),
         ).run()
 
         if result.clicked:
@@ -185,15 +185,22 @@ class Locationator(rumps.App):
                     )
                 else:
                     placemark = placemarks[0]
+                    placemark_dict = placemark_to_dict(placemark)
                     rumps.alert(
                         title="Reverse Geocode Result",
-                        message=f"{APP_NAME} {__version__} reverse geocode result: {placemark}",
+                        message=json.dumps(placemark_dict, indent=None),
                         ok="OK",
                     )
 
-            lat, lng = result.text.split(",")
-            lat = lat.strip()
-            lng = lng.strip()
+            try:
+                lat, lng = get_lat_long_from_string(result.text)
+            except ValueError as e:
+                rumps.alert(
+                    title="Error",
+                    message=f"{APP_NAME} {__version__} reverse geocode error: {e}",
+                    ok="OK",
+                )
+                return
             self.log(f"on_reverse_geocode: {lat}, {lng}")
             geocoder = CLGeocoder.alloc().init()
             location = CLLocation.alloc().initWithLatitude_longitude_(
@@ -472,6 +479,33 @@ def postal_address_to_dict(postalAddress: CNPostalAddress) -> dict:
     }
 
     return postalAddress_dict
+
+
+def get_lat_long_from_string(s: str) -> tuple[float, float]:
+    """Get latitude and longitude from a string
+
+    Args:
+        s: string with values which may be separated by comma or space
+
+    Returns: tuple of latitude and longitude as floats
+
+    Raises:
+        ValueError: if latitude or longitude is invalid or cannot be parsed
+    """
+    try:
+        lat, lng = s.split(",")
+    except ValueError:
+        try:
+            lat, lng = s.split(" ")
+        except ValueError:
+            raise ValueError(f"Could not parse latitude/longitude from string: {s}")
+    lat = lat.strip()
+    lng = lng.strip()
+    if not validate_latitude(lat):
+        raise ValueError(f"Invalid latitude: {lat}")
+    if not validate_longitude(lng):
+        raise ValueError(f"Invalid longitude: {lng}")
+    return lat, lng
 
 
 def serviceSelector(fn):

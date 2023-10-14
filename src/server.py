@@ -8,6 +8,8 @@ import json
 import queue
 from typing import TYPE_CHECKING
 
+from utils import validate_latitude, validate_longitude
+
 if TYPE_CHECKING:
     from locationator import Locationator
 
@@ -151,21 +153,3 @@ def run_server(app: Locationator, port: int, timeout: int):
         with contextlib.suppress(KeyboardInterrupt):
             httpd.serve_forever()
         httpd.server_close()
-
-
-def validate_latitude(latitude: str | float) -> bool:
-    """Return True if latitude is valid, False otherwise"""
-    try:
-        latitude = float(latitude)
-        return -90 <= latitude <= 90
-    except ValueError:
-        return False
-
-
-def validate_longitude(longitude: str | float) -> bool:
-    """Return True if longitude is valid, False otherwise"""
-    try:
-        longitude = float(longitude)
-        return -180 <= longitude <= 180
-    except ValueError:
-        return False
