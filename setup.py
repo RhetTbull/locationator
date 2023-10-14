@@ -20,6 +20,7 @@ DATA_FILES = [
     "src/icon_black.png",
     "src/loginitems.py",
     "src/utils.py",
+    "src/server.py",
 ]
 
 # These values will be included by py2app into the Info.plist file in the App bundle
