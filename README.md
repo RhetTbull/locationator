@@ -203,7 +203,7 @@ Server: SimpleHTTP/0.6 Python/3.11.6
 - If building with [pyenv](https://github.com/pyenv/pyenv) installed python, you'll need to build the python with framework support:
   - `env PYTHON_CONFIGURE_OPTS="--enable-framework" pyenv install -v 3.11.6`
 - Tested on macOS Ventura 13.5.1
-- By default, the server runs on port 8000. This can be changed by editing the configuraiton plist file at `~/Library/Application Support/Locationator/Locationator.plist` and chaning `port` to the desired port number then restarting the app.
+- By default, the server runs on port 8000. This can be changed by editing the configuraiton plist file at `~/Library/Application Support/Locationator/Locationator.plist` and changing `port` to the desired port number then restarting the app.
 
 ## Testing
 
