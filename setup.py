@@ -8,7 +8,7 @@ Usage:
 from setuptools import setup
 
 # The version number; do not change this manually! It is updated by bumpversion (https://github.com/c4urself/bump2version)
-__version__ = "0.0.2"
+__version__ = "0.0.3"
 
 # The file that contains the main application
 APP = ["src/locationator.py"]
