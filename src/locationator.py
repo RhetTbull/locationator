@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import contextlib
 import datetime
-import http.server
 import json
 import plistlib
 import queue
@@ -29,6 +28,7 @@ from CoreLocation import (
 from Foundation import NSURL, NSLog, NSObject, NSString, NSUTF8StringEncoding
 
 from loginitems import add_login_item, list_login_items, remove_login_item
+from server import run_server
 from utils import get_app_path, stringify
 
 # do not manually change the version; use bump2version per the README
@@ -60,126 +60,6 @@ AUTH_STATUS = {
 # how long to wait in seconds for reverse geocode to complete
 LOCATION_TIMEOUT = 15
 
-# hold global reference to the app so HTTP server can access it
-_global_app = None
-
-
-class Handler(http.server.SimpleHTTPRequestHandler):
-    """Very simple HTTP server to receive reverse geocode requests.
-
-    This should be sufficient for handling local requests but do not
-    expose this server to the internet.
-    """
-
-    # Would be nice to use FastAPI but I couldn't make that work when
-    # called from the Rumps app.
-
-    def do_GET(self):
-        if self.path == "/":
-            self.send_success(
-                f"Locationator server version {__version__} is running on port {SERVER_PORT}\n",
-                content_type="text/plain",
-            )
-        elif self.path.startswith("/reverse_geocode"):
-            query_dict = self.get_query_args()
-            if "latitude" not in query_dict or "longitude" not in query_dict:
-                self.send_bad_request("Missing latitude or longitude query arg")
-                return
-            success, result = self.reverse_geocode(
-                float(query_dict["latitude"]), float(query_dict["longitude"])
-            )
-            _global_app.log(f"do_PUT: {success=}, {result=}")
-            if success:
-                self.send_success(result)
-            else:
-                self.send_server_error(result)
-
-    def do_PUT(self):
-        global _global_app
-        if self.path == "/reverse_geocode":
-            content_length = int(self.headers["Content-Length"])
-            body = json.loads(self.rfile.read(content_length))
-            _global_app.log(f"do_PUT: {body=}")
-            if "latitude" in body and "longitude" in body:
-                success, result = self.handle_reverse_geocode_put(body)
-                _global_app.log(f"do_PUT: {success=}, {result=}")
-                if success:
-                    self.send_success(result)
-                else:
-                    self.send_server_error(result)
-            else:
-                self.send_bad_request("Missing latitude or longitude in body")
-
-    def send_bad_request(self, error_str: str):
-        """Send bad request"""
-        self.send_response(400)
-        self.send_header("Content-type", "text/plain")
-        self.end_headers()
-        self.wfile.write(b"Bad request: " + error_str.encode())
-
-    def send_success(self, result: str, content_type: str = "application/json"):
-        """Send success response"""
-        self.send_response(200)
-        self.send_header("Content-type", content_type)
-        self.end_headers()
-        self.wfile.write(result.encode())
-
-    def send_server_error(self, result: str):
-        """Send server error response"""
-        self.send_response(500)
-        self.send_header("Content-type", "text/plain")
-        self.end_headers()
-        self.wfile.write(result.encode())
-
-    def get_query_args(self) -> dict[str, str]:
-        """Parse query string and return dict of query args."""
-        try:
-            query = self.path.split("?")[1]
-            return dict(qc.split("=") for qc in query.split("&"))
-        except IndexError:
-            return {}
-
-    def handle_reverse_geocode_put(self, body: dict) -> tuple[bool, str]:
-        """Perform reverse geocode of latitude/longitude in body."""
-        success = False
-        try:
-            latitude = float(body["latitude"])
-            longitude = float(body["longitude"])
-            success = True
-        except ValueError as e:
-            result = f"Invalid latitude/longitude: {e}"
-
-        if not success:
-            return success, result
-
-        return self.reverse_geocode(latitude, longitude)
-
-    def reverse_geocode(self, latitude: float, longitude: float) -> tuple[bool, str]:
-        """Perform reverse geocode of latitude/longitude."""
-        geocode_queue = queue.Queue()
-        _global_app.log(f"reverse_geocode: {geocode_queue=}, calling reverse_geocode")
-        _global_app.reverse_geocode(latitude, longitude, geocode_queue)
-
-        try:
-            success, result = geocode_queue.get(block=True, timeout=LOCATION_TIMEOUT)
-            geocode_queue.task_done()
-        except geocode_queue.Empty:
-            success = False
-            result = "Timeout waiting for reverse geocode to complete"
-        return success, result
-
-
-def run_server(port: int = SERVER_PORT):
-    """Run the HTTP server"""
-    http.server.ThreadingHTTPServer.allow_reuse_address = True
-    with http.server.ThreadingHTTPServer(("", port), Handler) as httpd:
-        NSLog(f"{APP_NAME} {__version__} serving at port {port}")
-        try:
-            httpd.serve_forever()
-        except KeyboardInterrupt:
-            pass
-        httpd.server_close()
-
 
 class Locationator(rumps.App):
     """MacOS Menu Bar App to perform reverse geocoding from latitude/longitude."""
@@ -187,15 +67,17 @@ class Locationator(rumps.App):
     def __init__(self, *args, **kwargs):
         super(Locationator, self).__init__(*args, **kwargs)
 
+        # app version so it can be accessed from the server
+        self.version = __version__
+
         # set "debug" to true in the config file to enable debug logging
+        # if set in config, will be updated by load_config()
         self._debug = False
 
         # what port to run the server on
         # set "port" in the config file to change this
+        # if set in config, will be updated by load_config()
         self.port = SERVER_PORT
-
-        # pause / resume text detection
-        self._paused = False
 
         # set the icon to a PNG file in the current directory
         # this immediately updates the menu bar icon
@@ -204,8 +86,6 @@ class Locationator(rumps.App):
 
         # the log method uses NSLog to log to the unified log
         self.log("started")
-
-        # get list of supported languages for language menu
 
         # menus
         # self.menu_auth_status = rumps.MenuItem(
@@ -245,10 +125,6 @@ class Locationator(rumps.App):
         # TODO: doesn't appear to be needed for using reverse geocode
         # self.authorize()
 
-        # set global reference to self so HTTP server can access it
-        global _global_app
-        _global_app = self
-
         # start the HTTP server
         self.start_server()
 
@@ -278,7 +154,9 @@ class Locationator(rumps.App):
     def start_server(self):
         # Run the server in a separate thread
         self.log("start_server")
-        self.server_thread = threading.Thread(target=run_server, args=[self.port])
+        self.server_thread = threading.Thread(
+            target=run_server, args=[self, self.port, LOCATION_TIMEOUT]
+        )
         self.server_thread.start()
         self.log(f"start_server done: {self.server_thread}")
 
