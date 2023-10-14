@@ -45,6 +45,12 @@ def run_server(app: Locationator, port: int, timeout: int):
                 if "latitude" not in query_dict or "longitude" not in query_dict:
                     self.send_bad_request("Missing latitude or longitude query arg")
                     return
+                if not validate_latitude(query_dict["latitude"]):
+                    self.send_bad_request("Invalid latitude")
+                    return
+                if not validate_longitude(query_dict["longitude"]):
+                    self.send_bad_request("Invalid longitude")
+                    return
                 success, result = self.reverse_geocode(
                     float(query_dict["latitude"]), float(query_dict["longitude"])
                 )
@@ -62,6 +68,12 @@ def run_server(app: Locationator, port: int, timeout: int):
                 body = json.loads(self.rfile.read(content_length))
                 app.log(f"do_PUT: {body=}")
                 if "latitude" in body and "longitude" in body:
+                    if not validate_latitude(body["latitude"]):
+                        self.send_bad_request("Invalid latitude")
+                        return
+                    if not validate_longitude(body["longitude"]):
+                        self.send_bad_request("Invalid longitude")
+                        return
                     success, result = self.handle_reverse_geocode_put(body)
                     app.log(f"do_PUT: {success=}, {result=}")
                     if success:
@@ -139,3 +151,21 @@ def run_server(app: Locationator, port: int, timeout: int):
         with contextlib.suppress(KeyboardInterrupt):
             httpd.serve_forever()
         httpd.server_close()
+
+
+def validate_latitude(latitude: str | float) -> bool:
+    """Return True if latitude is valid, False otherwise"""
+    try:
+        latitude = float(latitude)
+        return -90 <= latitude <= 90
+    except ValueError:
+        return False
+
+
+def validate_longitude(longitude: str | float) -> bool:
+    """Return True if longitude is valid, False otherwise"""
+    try:
+        longitude = float(longitude)
+        return -180 <= longitude <= 180
+    except ValueError:
+        return False

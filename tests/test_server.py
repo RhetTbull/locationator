@@ -74,6 +74,26 @@ def test_get_reverse_geocode_missing_latitude(port):
         assert response.text == "Bad request: Missing latitude or longitude query arg"
 
 
+def test_get_reverse_geocode_bad_latitude(port):
+    """Test GET /reverse_geocode?latitude=bad&longitude="""
+    with httpx.Client() as client:
+        response = client.get(
+            f"http://localhost:{port}/reverse_geocode?latitude=100&longitude={LONGITUDE}"
+        )
+        assert response.status_code == 400
+        assert response.text == "Bad request: Invalid latitude"
+
+
+def test_get_reverse_geocode_bad_longitude(port):
+    """Test GET /reverse_geocode?latitude=&longitude=bad"""
+    with httpx.Client() as client:
+        response = client.get(
+            f"http://localhost:{port}/reverse_geocode?latitude={LATITUDE}&longitude=300"
+        )
+        assert response.status_code == 400
+        assert response.text == "Bad request: Invalid longitude"
+
+
 def test_get_reverse_geocode_valid(port):
     """Test GET /reverse_geocode?latitude=&longitude="""
     with httpx.Client() as client:
@@ -90,6 +110,28 @@ def test_put_reverse_geocode_bad(port):
         response = client.put(f"http://localhost:{port}/reverse_geocode", json={})
         assert response.status_code == 400
         assert response.text == "Bad request: Missing latitude or longitude in body"
+
+
+def test_put_reverse_geocode_bad_latitude(port):
+    """Test PUT /reverse_geocode with bad body"""
+    with httpx.Client() as client:
+        response = client.put(
+            f"http://localhost:{port}/reverse_geocode",
+            json={"latitude": "bad", "longitude": LONGITUDE},
+        )
+        assert response.status_code == 400
+        assert response.text == "Bad request: Invalid latitude"
+
+
+def test_put_reverse_geocode_bad_longitude(port):
+    """Test PUT /reverse_geocode with bad body"""
+    with httpx.Client() as client:
+        response = client.put(
+            f"http://localhost:{port}/reverse_geocode",
+            json={"latitude": LATITUDE, "longitude": "bad"},
+        )
+        assert response.status_code == 400
+        assert response.text == "Bad request: Invalid longitude"
 
 
 def test_put_reverse_geocode_valid(port):
