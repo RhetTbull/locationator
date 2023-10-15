@@ -1,6 +1,8 @@
+click>=8.1.7,<9.0.0
 httpx>=0.25.0
 py-applescript==1.0.3 
 py2app>=0.28.6
+pyinstaller>=6.1.0
 pyobjc-core>=9.2
 pyobjc-framework-Contacts>=9.2
 pyobjc-framework-CoreLocation>=9.2

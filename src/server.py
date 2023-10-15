@@ -93,7 +93,9 @@ def run_server(app: Locationator, port: int, timeout: int):
             """Send not found response"""
             self._send_response(404, "text/plain", "Not found: " + error_str)
 
-        def send_success(self, result: str, content_type: str = "application/json"):
+        def send_success(
+            self, result: str, content_type: str = "application/json;charset=UTF-8"
+        ):
             """Send success response"""
             self._send_response(200, content_type, result)
 

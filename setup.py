@@ -21,6 +21,8 @@ DATA_FILES = [
     "src/loginitems.py",
     "src/utils.py",
     "src/server.py",
+    "src/copyfile.py",
+    "cli/dist/revgeo",
 ]
 
 # These values will be included by py2app into the Info.plist file in the App bundle
@@ -37,6 +39,8 @@ PLIST = {
     "NSAppleEventsUsageDescription": "Locationator needs permission to send AppleScript events to add itself to Login Items.",
     # NSLocationWhenInUseUsageDescription is the message that appears when the app asks for permission to use location services
     "NSLocationWhenInUseUsageDescription": "Locationator needs access to your location to detect your current location and to perform reverse geocoding.",
+    # NSSystemAdministrationUsageDescription is the message that tells the user why the app is requesting to manipulate the system configuration.
+    "NSSystemAdministrationUsageDescription": "Locationator needs permission to install the command-line tools.",
     # NSServices is a list of services that the app provides that will appear in the Services menu
     # For more information on NSServices, see: https://developer.apple.com/documentation/bundleresources/information_property_list/nsservices?language=objc
     # "NSServices": [
@@ -57,6 +61,7 @@ OPTIONS = {
     # The icon file to use for the app (this is App icon in Finder, not the status bar icon)
     "iconfile": "icon.icns",
     "plist": PLIST,
+    "no_strip": True,
 }
 
 setup(

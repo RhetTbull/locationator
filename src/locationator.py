@@ -6,6 +6,7 @@ from __future__ import annotations
 import contextlib
 import datetime
 import json
+import pathlib
 import plistlib
 import queue
 import threading
@@ -13,7 +14,7 @@ import threading
 import objc
 import rumps
 from AppKit import NSPasteboardTypeFileURL
-from Contacts import CNPostalAddress
+from Contacts import CNPostalAddress, CNPostalAddressStreetKey
 from CoreLocation import (
     CLGeocoder,
     CLLocation,
@@ -27,6 +28,7 @@ from CoreLocation import (
 )
 from Foundation import NSURL, NSLog, NSObject, NSString, NSUTF8StringEncoding
 
+from copyfile import copyfile, removefile
 from loginitems import add_login_item, list_login_items, remove_login_item
 from server import run_server
 from utils import get_app_path, stringify, validate_latitude, validate_longitude
@@ -60,6 +62,13 @@ AUTH_STATUS = {
 # how long to wait in seconds for reverse geocode to complete
 LOCATION_TIMEOUT = 15
 
+# titles for install/remove menu
+INSTALL_TOOLS_TITLE = "Install command line tools"
+REMOVE_TOOLS_TITLE = "Remove command line tools"
+
+TOOLS_INSTALL_PATH = "/usr/local/bin"
+COMMAND_LINE_TOOLS = ["locationator"]
+
 
 class Locationator(rumps.App):
     """MacOS Menu Bar App to perform reverse geocoding from latitude/longitude."""
@@ -87,22 +96,20 @@ class Locationator(rumps.App):
         # the log method uses NSLog to log to the unified log
         self.log("started")
 
-        # menus
-        # self.menu_auth_status = rumps.MenuItem(
-        #     "Authorization status", self.on_auth_status
-        # )
         self.menu_reverse_geocode = rumps.MenuItem(
-            "Reverse geocode...", self.on_reverse_geocode
+            "Reverse geocode...", callback=self.on_reverse_geocode
         )
-        self.menu_about = rumps.MenuItem(f"About {APP_NAME}", self.on_about)
-        self.menu_quit = rumps.MenuItem(f"Quit {APP_NAME}", self.on_quit)
+        self.menu_about = rumps.MenuItem(f"About {APP_NAME}", callback=self.on_about)
+        self.menu_quit = rumps.MenuItem(f"Quit {APP_NAME}", callback=self.on_quit)
         self.menu_start_on_login = rumps.MenuItem(
             "Start on login", callback=self.on_start_on_login
         )
-        # add cascading menu for menu icon white/black
         self.menu_icon = rumps.MenuItem("Icon")
         self.menu_icon_white = rumps.MenuItem("White", callback=self.on_app_icon)
         self.menu_icon_black = rumps.MenuItem("Black", callback=self.on_app_icon)
+        self.menu_install_tools = rumps.MenuItem(
+            INSTALL_TOOLS_TITLE, callback=self.on_install_remove_tools
+        )
 
         self.menu = [
             # self.menu_auth_status,
@@ -110,6 +117,7 @@ class Locationator(rumps.App):
             None,
             [self.menu_icon, [self.menu_icon_white, self.menu_icon_black]],
             self.menu_start_on_login,
+            self.menu_install_tools,
             self.menu_about,
             self.menu_quit,
         ]
@@ -127,6 +135,87 @@ class Locationator(rumps.App):
 
         # start the HTTP server
         self.start_server()
+
+    def on_install_remove_tools(self, sender):
+        """Install or remove the command line tools"""
+        if sender.title.startswith("Install"):
+            if self.install_tools():
+                sender.title = REMOVE_TOOLS_TITLE
+                self.config["tools_installed"] = True
+                self.save_config()
+        elif self.remove_tools():
+            sender.title = INSTALL_TOOLS_TITLE
+            self.config["tools_installed"] = False
+            self.save_config()
+
+    def install_tools(self):
+        """Install the command line tools, located in Resources folder of app to /usr/local/bin"""
+        self.log("on_install_tools")
+        app_path = get_app_path()
+        self.log(f"app_path: {app_path}")
+        self.log(f"installing tools to {TOOLS_INSTALL_PATH}")
+        install_path = pathlib.Path(TOOLS_INSTALL_PATH)
+        if not install_path.exists():
+            self.log(f"creating {install_path}")
+            install_path.mkdir(parents=True)
+        for tool in COMMAND_LINE_TOOLS:
+            src = f"{app_path}/Contents/Resources/{tool}"
+            dst = f"{install_path}/{tool}"
+            self.log(f"copying {src} to {dst}")
+            if pathlib.Path(dst).exists():
+                self.log(f"removing existing {dst}")
+                try:
+                    removefile(dst)
+                except Exception as e:
+                    self.log(f"error removing {dst}: {e}")
+                    rumps.alert(
+                        title="Error",
+                        message=f"Error removing {dst}: {e}",
+                        ok="OK",
+                    )
+                    return False
+            try:
+                copyfile(src, dst)
+            except Exception as e:
+                self.log(f"error copying {src} to {dst}: {e}")
+                rumps.alert(
+                    title="Error",
+                    message=f"Error copying {src} to {dst}: {e}",
+                    ok="OK",
+                )
+                return False
+            pathlib.Path(dst).chmod(0o755)
+        self.log("on_install_tools done")
+        return True
+
+    def remove_tools(self) -> bool:
+        """Remove command line tools"""
+        self.log("on_remove_tools")
+        install_path = TOOLS_INSTALL_PATH
+        for tool in COMMAND_LINE_TOOLS:
+            dst = f"{install_path}/{tool}"
+            self.log(f"removing {dst}")
+            try:
+                removefile(dst)
+            except Exception as e:
+                self.log(f"error removing {dst}: {e}")
+                rumps.alert(
+                    title="Error",
+                    message=f"Error removing {dst}: {e}",
+                    ok="OK",
+                )
+                return False
+        self.log("on_remove_tools done")
+        return True
+
+    def tools_installed(self) -> bool:
+        """Return True if command line tools installed"""
+        install_path = TOOLS_INSTALL_PATH
+        for tool in COMMAND_LINE_TOOLS:
+            dst = f"{install_path}/{tool}"
+            if not pathlib.Path(dst).exists():
+                return False
+        return True
 
     def authorize(self):
         """Request authorization for Location Services"""
@@ -316,27 +405,20 @@ class Locationator(rumps.App):
                 "debug": False,
                 "port": SERVER_PORT,
                 "menu_icon_color": MENU_ICON_DEFAULT,
+                "tools_installed": self.tools_installed(),
             }
         self.log(f"loaded config: {self.config}")
 
         # update the menu state to match the loaded config
-        # self.append.state = self.config.get("append", False)
-        # self.linebreaks.state = self.config.get("linebreaks", True)
-        # self.show_notification.state = self.config.get("notification", True)
-        # self.set_app_icon_state(self.config.get("menu_icon", menu_icon_DEFAULT))
-        # self.recognition_language = self.config.get(
-        #     "language", self.recognition_language
-        # )
-        # self.set_language_menu_state(self.recognition_language)
-        # self.language_english.state = self.config.get("always_detect_english", True)
-        # self.detect_clipboard.state = self.config.get("detect_clipboard", True)
-        # self.confirmation.state = self.config.get("confirmation", False)
-        # self.qrcodes.state = self.config.get("detect_qrcodes", False)
         self._debug = self.config.get("debug", False)
         self.port = self.config.get("port", SERVER_PORT)
         self.set_app_icon_state(self.config.get("menu_icon_color", MENU_ICON_DEFAULT))
-
-        # self.start_on_login.state = self.config.get("start_on_login", False)
+        self.config["tools_installed"] = self.tools_installed()
+        self.menu_install_tools.title = (
+            INSTALL_TOOLS_TITLE
+            if not self.config["tools_installed"]
+            else REMOVE_TOOLS_TITLE
+        )
 
         # save config because it may have been updated with default values
         self.save_config()
@@ -346,18 +428,11 @@ class Locationator(rumps.App):
 
         See docstring on load_config() for additional information.
         """
-        # self.config["linebreaks"] = self.linebreaks.state
-        # self.config["append"] = self.append.state
-        # self.config["notification"] = self.show_notification.state
-        # self.config["menu_icon"] = self.get_app_icon_state()
-        # self.config["language"] = self.recognition_language
-        # self.config["always_detect_english"] = self.language_english.state
-        # self.config["detect_clipboard"] = self.detect_clipboard.state
-        # self.config["confirmation"] = self.confirmation.state
-        # self.config["detect_qrcodes"] = self.qrcodes.state
+
         self.config["debug"] = self._debug
         self.config["port"] = self.port
         self.config["menu_icon_color"] = self.get_app_icon_state()
+        self.config["tools_installed"] = self.tools_installed()
 
         # self.config["start_on_login"] = self.start_on_login.state
         with self.open(CONFIG_FILE, "wb+") as f:
@@ -425,7 +500,7 @@ def placemark_to_dict(placemark: CLPlacemark) -> dict:
             coordinate.latitude,
             coordinate.longitude,
         ),
-        "name": str(placemark.name()),
+        "name": stringify(placemark.name()),
         "thoroughfare": stringify(placemark.thoroughfare()),
         "subThoroughfare": stringify(placemark.subThoroughfare()),
         "locality": stringify(placemark.locality()),
