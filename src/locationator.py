@@ -6,6 +6,7 @@ from __future__ import annotations
 import contextlib
 import datetime
 import json
+import os
 import pathlib
 import plistlib
 import queue
@@ -31,7 +32,7 @@ from Foundation import NSURL, NSLog, NSObject, NSString, NSUTF8StringEncoding
 from copyfile import copyfile, removefile
 from loginitems import add_login_item, list_login_items, remove_login_item
 from server import run_server
-from utils import get_app_path, stringify, validate_latitude, validate_longitude
+from utils import get_app_path, str_or_none, validate_latitude, validate_longitude
 
 # do not manually change the version; use bump2version per the README
 __version__ = "0.0.3"
@@ -136,87 +137,6 @@ class Locationator(rumps.App):
         # start the HTTP server
         self.start_server()
 
-    def on_install_remove_tools(self, sender):
-        """Install or remove the command line tools"""
-        if sender.title.startswith("Install"):
-            if self.install_tools():
-                sender.title = REMOVE_TOOLS_TITLE
-                self.config["tools_installed"] = True
-                self.save_config()
-        elif self.remove_tools():
-            sender.title = INSTALL_TOOLS_TITLE
-            self.config["tools_installed"] = False
-            self.save_config()
-
-    def install_tools(self):
-        """Install the command line tools, located in Resources folder of app to /usr/local/bin"""
-        self.log("on_install_tools")
-        app_path = get_app_path()
-        self.log(f"app_path: {app_path}")
-        self.log(f"installing tools to {TOOLS_INSTALL_PATH}")
-        install_path = pathlib.Path(TOOLS_INSTALL_PATH)
-        if not install_path.exists():
-            self.log(f"creating {install_path}")
-            install_path.mkdir(parents=True)
-        for tool in COMMAND_LINE_TOOLS:
-            src = f"{app_path}/Contents/Resources/{tool}"
-            dst = f"{install_path}/{tool}"
-            self.log(f"copying {src} to {dst}")
-            if pathlib.Path(dst).exists():
-                self.log(f"removing existing {dst}")
-                try:
-                    removefile(dst)
-                except Exception as e:
-                    self.log(f"error removing {dst}: {e}")
-                    rumps.alert(
-                        title="Error",
-                        message=f"Error removing {dst}: {e}",
-                        ok="OK",
-                    )
-                    return False
-            try:
-                copyfile(src, dst)
-            except Exception as e:
-                self.log(f"error copying {src} to {dst}: {e}")
-                rumps.alert(
-                    title="Error",
-                    message=f"Error copying {src} to {dst}: {e}",
-                    ok="OK",
-                )
-                return False
-            pathlib.Path(dst).chmod(0o755)
-        self.log("on_install_tools done")
-        return True
-
-    def remove_tools(self) -> bool:
-        """Remove command line tools"""
-        self.log("on_remove_tools")
-        install_path = TOOLS_INSTALL_PATH
-        for tool in COMMAND_LINE_TOOLS:
-            dst = f"{install_path}/{tool}"
-            self.log(f"removing {dst}")
-            try:
-                removefile(dst)
-            except Exception as e:
-                self.log(f"error removing {dst}: {e}")
-                rumps.alert(
-                    title="Error",
-                    message=f"Error removing {dst}: {e}",
-                    ok="OK",
-                )
-                return False
-        self.log("on_remove_tools done")
-        return True
-
-    def tools_installed(self) -> bool:
-        """Return True if command line tools installed"""
-        install_path = TOOLS_INSTALL_PATH
-        for tool in COMMAND_LINE_TOOLS:
-            dst = f"{install_path}/{tool}"
-            if not pathlib.Path(dst).exists():
-                return False
-        return True
-
     def authorize(self):
         """Request authorization for Location Services"""
         self.location_manager.requestAlwaysAuthorization()
@@ -299,6 +219,87 @@ class Locationator(rumps.App):
                 location, _geocode_completion_handler
             )
 
+    def on_install_remove_tools(self, sender):
+        """Install or remove the command line tools"""
+        if sender.title.startswith("Install"):
+            if self.install_tools():
+                sender.title = REMOVE_TOOLS_TITLE
+                self.config["tools_installed"] = True
+                self.save_config()
+        elif self.remove_tools():
+            sender.title = INSTALL_TOOLS_TITLE
+            self.config["tools_installed"] = False
+            self.save_config()
+
+    def install_tools(self):
+        """Install the command line tools, located in Resources folder of app to /usr/local/bin"""
+        self.log("on_install_tools")
+        app_path = get_app_path()
+        self.log(f"app_path: {app_path}")
+        self.log(f"installing tools to {TOOLS_INSTALL_PATH}")
+        install_path = pathlib.Path(TOOLS_INSTALL_PATH)
+        if not install_path.exists():
+            self.log(f"creating {install_path}")
+            install_path.mkdir(parents=True)
+        for tool in COMMAND_LINE_TOOLS:
+            src = f"{app_path}/Contents/Resources/{tool}"
+            dst = f"{install_path}/{tool}"
+            self.log(f"copying {src} to {dst}")
+            if pathlib.Path(dst).exists():
+                self.log(f"removing existing {dst}")
+                try:
+                    removefile(dst)
+                except Exception as e:
+                    self.log(f"error removing {dst}: {e}")
+                    rumps.alert(
+                        title="Error",
+                        message=f"Error removing {dst}: {e}",
+                        ok="OK",
+                    )
+                    return False
+            try:
+                copyfile(src, dst)
+            except Exception as e:
+                self.log(f"error copying {src} to {dst}: {e}")
+                rumps.alert(
+                    title="Error",
+                    message=f"Error copying {src} to {dst}: {e}",
+                    ok="OK",
+                )
+                return False
+            pathlib.Path(dst).chmod(0o755)
+        self.log("on_install_tools done")
+        return True
+
+    def remove_tools(self) -> bool:
+        """Remove command line tools"""
+        self.log("on_remove_tools")
+        install_path = TOOLS_INSTALL_PATH
+        for tool in COMMAND_LINE_TOOLS:
+            dst = f"{install_path}/{tool}"
+            self.log(f"removing {dst}")
+            try:
+                removefile(dst)
+            except Exception as e:
+                self.log(f"error removing {dst}: {e}")
+                rumps.alert(
+                    title="Error",
+                    message=f"Error removing {dst}: {e}",
+                    ok="OK",
+                )
+                return False
+        self.log("on_remove_tools done")
+        return True
+
+    def tools_installed(self) -> bool:
+        """Return True if command line tools installed"""
+        install_path = TOOLS_INSTALL_PATH
+        for tool in COMMAND_LINE_TOOLS:
+            dst = f"{install_path}/{tool}"
+            if not pathlib.Path(dst).exists():
+                return False
+        return True
+
     def reverse_geocode(
         self, latitude: float, longitude: float, geocode_queue: queue.Queue
     ):
@@ -327,9 +328,7 @@ class Locationator(rumps.App):
                     return
 
                 placemark = placemarks.objectAtIndex_(0)
-                self.log(f"geocode_completion_handler result: {placemark}")
                 placemark_dict = placemark_to_dict(placemark)
-                self.log(f"geocode_completion_handler: {placemark_dict=}")
                 geocode_queue.put((True, json.dumps(placemark_dict)))
 
             # start the request then wait for completion
@@ -377,7 +376,7 @@ class Locationator(rumps.App):
         # if debug set in config, also log to file
         # file will be created in Application Support folder
         if self._debug:
-            with self.open(LOG_FILE, "a") as f:
+            with self.open(LOG_FILE, "a", encoding="utf-8") as f:
                 f.write(f"{datetime.datetime.now().isoformat()} - {msg}\n")
 
     def load_config(self):
@@ -477,6 +476,19 @@ class Locationator(rumps.App):
         self.log(f"notification: {title} - {subtitle} - {message}")
         rumps.notification(title, subtitle, message)
 
+    def open(self, *args, encoding=None):
+        """Open a file within the application support folder for this application.
+
+        Note: This is a wrapper around open() that prepends the application support folder.
+        This is used instead of rumps.App.open() which doesn't allow specifying an encoding.
+        """
+        open_args = [os.path.join(self._application_support, args[0]), *args[1:]]
+        open_kwargs = {}
+        if encoding:
+            open_kwargs["encoding"] = encoding
+        print(open_args, open_kwargs)
+        return open(*open_args, **open_kwargs)
+
 
 def placemark_to_dict(placemark: CLPlacemark) -> dict:
     """Convert a CLPlacemark to a dict
@@ -493,29 +505,31 @@ def placemark_to_dict(placemark: CLPlacemark) -> dict:
     areasOfInterest = []
     if placemark.areasOfInterest():
         for i in range(placemark.areasOfInterest().count()):
-            areasOfInterest.append(str(placemark.areasOfInterest().objectAtIndex_(i)))
+            areasOfInterest.append(
+                str_or_none(placemark.areasOfInterest().objectAtIndex_(i))
+            )
 
     placemark_dict = {
         "location": (
             coordinate.latitude,
             coordinate.longitude,
         ),
-        "name": stringify(placemark.name()),
-        "thoroughfare": stringify(placemark.thoroughfare()),
-        "subThoroughfare": stringify(placemark.subThoroughfare()),
-        "locality": stringify(placemark.locality()),
-        "subLocality": stringify(placemark.subLocality()),
-        "administrativeArea": stringify(placemark.administrativeArea()),
-        "subAdministrativeArea": stringify(placemark.subAdministrativeArea()),
-        "postalCode": stringify(placemark.postalCode()),
-        "ISOcountryCode": stringify(placemark.ISOcountryCode()),
-        "country": stringify(placemark.country()),
+        "name": str_or_none(placemark.name()),
+        "thoroughfare": str_or_none(placemark.thoroughfare()),
+        "subThoroughfare": str_or_none(placemark.subThoroughfare()),
+        "locality": str_or_none(placemark.locality()),
+        "subLocality": str_or_none(placemark.subLocality()),
+        "administrativeArea": str_or_none(placemark.administrativeArea()),
+        "subAdministrativeArea": str_or_none(placemark.subAdministrativeArea()),
+        "postalCode": str_or_none(placemark.postalCode()),
+        "ISOcountryCode": str_or_none(placemark.ISOcountryCode()),
+        "country": str_or_none(placemark.country()),
         "postalAddress": postalAddress,
-        "inlandWater": stringify(placemark.inlandWater()),
-        "ocean": stringify(placemark.ocean()),
+        "inlandWater": str_or_none(placemark.inlandWater()),
+        "ocean": str_or_none(placemark.ocean()),
         "areasOfInterest": areasOfInterest,
-        "timeZoneName": stringify(timezone.name()),
-        "timeZoneAbbreviation": stringify(timezone.abbreviation()),
+        "timeZoneName": str_or_none(timezone.name()),
+        "timeZoneAbbreviation": str_or_none(timezone.abbreviation()),
         "timeZoneSecondsFromGMT": int(timezone.secondsFromGMT()),
     }
 
@@ -543,14 +557,14 @@ def postal_address_to_dict(postalAddress: CNPostalAddress) -> dict:
         }
 
     postalAddress_dict = {
-        "street": stringify(postalAddress.street()),
-        "city": stringify(postalAddress.city()),
-        "state": stringify(postalAddress.state()),
-        "country": stringify(postalAddress.country()),
-        "postalCode": stringify(postalAddress.postalCode()),
-        "ISOCountryCode": stringify(postalAddress.ISOCountryCode()),
-        "subAdministrativeArea": stringify(postalAddress.subAdministrativeArea()),
-        "subLocality": stringify(postalAddress.subLocality()),
+        "street": str_or_none(postalAddress.street()),
+        "city": str_or_none(postalAddress.city()),
+        "state": str_or_none(postalAddress.state()),
+        "country": str_or_none(postalAddress.country()),
+        "postalCode": str_or_none(postalAddress.postalCode()),
+        "ISOCountryCode": str_or_none(postalAddress.ISOCountryCode()),
+        "subAdministrativeArea": str_or_none(postalAddress.subAdministrativeArea()),
+        "subLocality": str_or_none(postalAddress.subLocality()),
     }
 
     return postalAddress_dict

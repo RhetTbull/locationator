@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import click
 import json
-import plistlib
 import pathlib
-
+import plistlib
 from typing import Any
 
+import click
 import httpx
 
 # Do not update __version__ manually. Use bump2version.

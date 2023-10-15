@@ -9,12 +9,8 @@ import objc
 from Foundation import NSBundle, NSDesktopDirectory, NSFileManager, NSUserDomainMask
 
 
-def stringify(value: Any) -> str:
-    """Convert value to str or "" if value is None"""
-    from Foundation import NSLog
-
-    NSLog(f"Locationator: stringify: {value} ({type(value)})")
-    return value if value is not None else ""
+def str_or_none(value: Any) -> str:
+    """Convert value to str or "" if value is None; useful for objc.pyobjc_unicode objects"""
     return str(value) if value is not None else ""
 
 

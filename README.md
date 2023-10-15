@@ -205,6 +205,13 @@ Server: SimpleHTTP/0.6 Python/3.11.6
 - Tested on macOS Ventura 13.5.1
 - By default, the server runs on port 8000. This can be changed by editing the configuraiton plist file at `~/Library/Application Support/Locationator/Locationator.plist` and changing `port` to the desired port number then restarting the app.
 
+## Building
+
+Locationator uses [doit](https://pydoit.org/) to build the app. To build the app, run `doit` in the root of the repo. Run `doit list` to see list of available tasks.
+
+`pip install -r dev_requirements.txt`
+`doit`
+
 ## Testing
 
 - The app can be tested by running the tests in the `tests` directory with pytest.

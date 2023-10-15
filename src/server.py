@@ -147,6 +147,7 @@ def run_server(app: Locationator, port: int, timeout: int):
             except geocode_queue.Empty:
                 success = False
                 result = "Timeout waiting for reverse geocode to complete"
+            app.log(f"reverse_geocode: {success=}, {result=}")
             return success, result
 
     http.server.ThreadingHTTPServer.allow_reuse_address = True

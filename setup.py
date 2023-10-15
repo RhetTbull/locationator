@@ -5,6 +5,8 @@ Usage:
     python setup.py py2app
 """
 
+import pathlib
+
 from setuptools import setup
 
 # The version number; do not change this manually! It is updated by bumpversion (https://github.com/c4urself/bump2version)
@@ -12,6 +14,11 @@ __version__ = "0.0.3"
 
 # The file that contains the main application
 APP = ["src/locationator.py"]
+
+if not pathlib.Path("dist/locationator").exists():
+    raise FileNotFoundError(
+        "Could not find CLI executable at dist/locationator. Did you run `doit build_cli`?"
+    )
 
 # Include additional python modules here; probably not the best way to do this
 # but I couldn't figure out how else to get py2app to include modules in the src/ folder
@@ -22,7 +29,7 @@ DATA_FILES = [
     "src/utils.py",
     "src/server.py",
     "src/copyfile.py",
-    "cli/dist/revgeo",
+    "dist/locationator",  # include CLI in app bundle
 ]
 
 # These values will be included by py2app into the Info.plist file in the App bundle
