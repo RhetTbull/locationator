@@ -165,8 +165,8 @@ Commands:
 
 Locationator uses [doit](https://pydoit.org/) to build the app. To build the app, run `doit` in the root of the repo. Run `doit list` to see list of available tasks.
 
-`pip install -r dev_requirements.txt`
-`doit`
+- `pip install -r dev_requirements.txt`
+- `doit`
 
 ## Testing
 
