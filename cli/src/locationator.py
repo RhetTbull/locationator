@@ -33,7 +33,16 @@ def cli(ctx: click.Context, debug: bool, port: int):
 def lookup(
     ctx: click.Context, indent: int, no_indent: bool, latitude: float, longitude: float
 ):
-    """Lookup the reverse geolocation for a lat/lon pair."""
+    """Lookup the reverse geolocation for a lat/lon pair.
+
+    Note: if you need to pass a negative latitude or longitude, you must use the -- flag to
+    prevent the command line parser from interpreting the value as an option.
+
+    For example:
+
+    locationator lookup -- 33.953636 -118.33895
+
+    """
     try:
         config = load_config()
     except FileNotFoundError as e:
