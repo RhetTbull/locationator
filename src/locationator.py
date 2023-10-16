@@ -231,6 +231,16 @@ class Locationator(rumps.App):
     def install_tools(self):
         """Install the command line tools, located in Resources folder of app to /usr/local/bin"""
         self.log("on_install_tools")
+        if (
+            rumps.alert(
+                "Install command line tools",
+                f"Install command line tools to\n{TOOLS_INSTALL_PATH}",
+                "OK",
+                "Cancel",
+            )
+            != 1
+        ):
+            return False
         app_path = get_app_path()
         self.log(f"app_path: {app_path}")
         self.log(f"installing tools to {TOOLS_INSTALL_PATH}")
@@ -265,6 +275,11 @@ class Locationator(rumps.App):
                 )
                 return False
             pathlib.Path(dst).chmod(0o755)
+        message = "Command lines tools installed. "
+        f"The following tools have been installed to {TOOLS_INSTALL_PATH}\n"
+        for tool in COMMAND_LINE_TOOLS:
+            message += f"- {tool}\n"
+        rumps.alert("Command line tools installed", message, "OK")
         self.log("on_install_tools done")
         return True
 

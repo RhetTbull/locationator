@@ -5,6 +5,8 @@ import pathlib
 
 def get_app_files() -> list[pathlib.Path]:
     """Get list of all files in the app bundle for dependency checking"""
+    if not pathlib.Path("dist/Locationator.app").exists():
+        return ["dist/Locationator.app"]
     return [
         p for p in pathlib.Path("dist/Locationator.app").glob("**/*") if p.is_file()
     ]
@@ -45,3 +47,8 @@ def task_create_dmg():
         "file_dep": [*file_deps, "create_dmg.sh"],
         "targets": ["dist/Locationator-Installer.dmg"],
     }
+
+
+def task_tests():
+    """Run tests"""
+    return {"actions": ["python3 -m pytest tests/"]}

@@ -2,10 +2,12 @@
 
 
 a = Analysis(
-    ['src/locationator.py'],
+    ["src/locationator.py"],
     pathex=[],
     binaries=[],
-    datas=[],
+    datas=[
+        ("src/exiftool_filetypes.json", "."),
+    ],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
@@ -21,7 +23,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='locationator',
+    name="locationator",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
