@@ -11,7 +11,7 @@ import click
 import httpx
 
 # Do not update __version__ manually. Use bump2version.
-__version__ = "0.0.3"
+__version__ = "0.0.4"
 
 
 @click.group()
