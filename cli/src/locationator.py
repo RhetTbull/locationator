@@ -104,9 +104,8 @@ def from_exif(ctx: click.Context, indent: int, no_indent: bool, filename: str):
 @click.argument("filename", type=click.Path(exists=True, dir_okay=False))
 @click.pass_context
 def write_xmp(ctx: click.Context, indent: int, no_indent: bool, filename: str):
-    """Lookup the reverse geolocation for an image/video file using the
-    latitude/longitude from the file's metadata then write the results to
-    the file's XMP metadata.
+    """Write the reverse geocode results to the file's XMP metadata after performing
+    a lookup with the latitude/longitude found in the file's metadata with exiftool.
 
     Requires exiftool (https://exiftool.org/) be installed and on your PATH.
 
