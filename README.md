@@ -23,7 +23,7 @@ Alternatively, to build from source:
 
 ## Usage
 
-Locationator server is a very simple HTTP server for handling local requests. It supports three endpoints, `GET /`, `GET /reverse_geocode`, and `PUT /reverse_geocode`.
+Locationator server is a very simple HTTP server for handling local requests. It supports two endpoints, `GET /` and `GET /reverse_geocode`.
 
 >*Please note*, this server is for local use and NOT intended to be exposed to the internet. The server does not support any authentication or authorization and is intended to be used on a local machine only.
 
@@ -126,76 +126,32 @@ Server: SimpleHTTP/0.6 Python/3.11.6
 }
 ```
 
-### PUT /reverse_geocode
+## Command Line Tools
 
-Receive geocode queries from the client. This endpoint accepts PUT requests with latitude and longitude data in the body of the request, performs reverse geocoding and returns the result.
+Locationator provides a menu option to "Install Command Line tools" that will install the `locationator` CLI to `/usr/local/bin`. The CLI has 3 commands. `lookup`, `from-exif`, and `write-xmp`.  `lookup` looks up the reverse geocoding for a given latitude & longitude. `from-exif` reads the GPS coordinates from a file using [exiftool](https://exiftool.org) and prints out the reverse geocoding data in JSON format. `write-xmp` reads the GPS coordinates from the file and writes the following fields to the XMP metadata of the file using exiftool:
 
-**URL** : `/reverse_geocode`
+- XMP:CountryCode (ISOcountryCode)
+- XMP:Country (country)
+- XMP:State (administrativeArea)
+- XMP:City (locality)
+- XMP:Location (name)
 
-**Method** : `PUT`
+exiftool must be installed to use `from-exif` or `write-xmp`.
 
-**Request Format** : Accepts a JSON object with the fields latitude and longitude. Both fields are required.
+CLI Usage:
 
-**Data Parameters** :
+```
+Usage: locationator [OPTIONS] COMMAND [ARGS]...
 
-|Parameter|Type|Description|
-|---|---|---|
-|`latitude`|Double|Latitude of the location to be reverse geocoded|
-|`longitude`|Double|Longitude of the location to be reverse geocoded|
+Options:
+  --debug
+  --port INTEGER
+  --help          Show this message and exit.
 
-**Response format** :
-
-- On Success, Content-type is application/json and a response code of 200 with a JSON object containing the reverse geocoding result is returned
-- On Failure, a description of the error is returned with a suitable HTTP response code
-
-**Success Response Example**:
-
-`http put localhost:8000/reverse_geocode latitude=33.953636 longitude=-118.338950`
-
-or
-
-`curl -X PUT -H "Content-Type: application/json" -d '{"latitude":33.953636, "longitude":-118.338950}' http://localhost:8000/reverse_geocode`
-
-```http
-HTTP/1.0 200 OK
-Content-type: application/json
-Date: Fri, 13 Oct 2023 16:19:46 GMT
-Server: SimpleHTTP/0.6 Python/3.11.6
-
-{
-    "ISOcountryCode": "US",
-    "administrativeArea": "CA",
-    "areasOfInterest": [
-        "SoFi Stadium"
-    ],
-    "country": "United States",
-    "inlandWater": "None",
-    "locality": "Inglewood",
-    "location": [
-        33.953636,
-        -118.33895
-    ],
-    "name": "SoFi Stadium",
-    "ocean": "None",
-    "postalAddress": {
-        "ISOCountryCode": "US",
-        "city": "Inglewood",
-        "country": "United States",
-        "postalCode": "90305",
-        "state": "CA",
-        "street": "1001 Stadium Dr",
-        "subAdministrativeArea": "Los Angeles County",
-        "subLocality": "Century"
-    },
-    "postalCode": "90305",
-    "subAdministrativeArea": "Los Angeles County",
-    "subLocality": "Century",
-    "subThoroughfare": "1001",
-    "thoroughfare": "Stadium Dr",
-    "timeZoneAbbreviation": "PDT",
-    "timeZoneName": "America/Los_Angeles",
-    "timeZoneSecondsFromGMT": -25200
-}
+Commands:
+  from-exif  Lookup the reverse geolocation for an image/video file using...
+  lookup     Lookup the reverse geolocation for a lat/lon pair.
+  write-xmp  Lookup the reverse geolocation for an image/video file using...
 ```
 
 ## Notes
@@ -209,8 +165,8 @@ Server: SimpleHTTP/0.6 Python/3.11.6
 
 Locationator uses [doit](https://pydoit.org/) to build the app. To build the app, run `doit` in the root of the repo. Run `doit list` to see list of available tasks.
 
-`pip install -r dev_requirements.txt`
-`doit`
+- `pip install -r dev_requirements.txt`
+- `doit`
 
 ## Testing
 
