@@ -41,7 +41,6 @@ APP_NAME = "Locationator"
 APP_ICON_WHITE = "icon_white.png"
 APP_ICON_BLACK = "icon_black.png"
 APP_ICON = APP_ICON_WHITE
-MENU_ICON_DEFAULT = "white"
 
 # where to store saved state, will reside in Application Support/APP_NAME
 CONFIG_FILE = f"{APP_NAME}.plist"
@@ -94,9 +93,11 @@ class Locationator(rumps.App):
         # py2app will place the icon in the app bundle Resources folder
         self.icon = APP_ICON
 
+        # ensure icon matches menu bar dark/light state
+        self.template = True
+
         # the log method uses NSLog to log to the unified log
         self.log("started")
-
         self.menu_reverse_geocode = rumps.MenuItem(
             "Reverse geocode...", callback=self.on_reverse_geocode
         )
@@ -105,9 +106,6 @@ class Locationator(rumps.App):
         self.menu_start_on_login = rumps.MenuItem(
             "Start on login", callback=self.on_start_on_login
         )
-        self.menu_icon = rumps.MenuItem("Icon")
-        self.menu_icon_white = rumps.MenuItem("White", callback=self.on_app_icon)
-        self.menu_icon_black = rumps.MenuItem("Black", callback=self.on_app_icon)
         self.menu_install_tools = rumps.MenuItem(
             INSTALL_TOOLS_TITLE, callback=self.on_install_remove_tools
         )
@@ -116,7 +114,6 @@ class Locationator(rumps.App):
             # self.menu_auth_status,
             self.menu_reverse_geocode,
             None,
-            [self.menu_icon, [self.menu_icon_white, self.menu_icon_black]],
             self.menu_start_on_login,
             self.menu_install_tools,
             self.menu_about,
@@ -336,40 +333,6 @@ class Locationator(rumps.App):
                 location, geocode_completion_handler
             )
 
-    def on_app_icon(self, sender):
-        """Change menu_icon"""
-        self.clear_app_icon_state()
-        sender.state = True
-        self.set_app_icon_state(self.get_app_icon_state())
-        self.save_config()
-
-    def clear_app_icon_state(self):
-        """Clear menu_icon menu state"""
-        self.menu_icon_white.state = False
-        self.menu_icon_black.state = False
-
-    def get_app_icon_state(self):
-        """Get menu_icon state."""
-        if self.menu_icon_white.state:
-            return "white"
-        elif self.menu_icon_black.state:
-            return "black"
-        else:
-            return MENU_ICON_DEFAULT
-
-    def set_app_icon_state(self, menu_icon):
-        """Set menu_icon state."""
-        self.log(f"set_app_icon_state: {menu_icon}")
-        self.clear_app_icon_state()
-        if menu_icon == "white":
-            self.menu_icon_white.state = True
-            self.icon = APP_ICON_WHITE
-        elif menu_icon == "black":
-            self.menu_icon_black.state = True
-            self.icon = APP_ICON_BLACK
-        else:
-            raise ValueError(f"Unknown menu_icon state: {menu_icon}")
-
     def log(self, msg: str):
         """Log a message to unified log."""
         NSLog(f"{APP_NAME} {__version__} {msg}")
@@ -403,7 +366,6 @@ class Locationator(rumps.App):
             self.config = {
                 "debug": False,
                 "port": SERVER_PORT,
-                "menu_icon_color": MENU_ICON_DEFAULT,
                 "tools_installed": self.tools_installed(),
             }
         self.log(f"loaded config: {self.config}")
@@ -411,7 +373,6 @@ class Locationator(rumps.App):
         # update the menu state to match the loaded config
         self._debug = self.config.get("debug", False)
         self.port = self.config.get("port", SERVER_PORT)
-        self.set_app_icon_state(self.config.get("menu_icon_color", MENU_ICON_DEFAULT))
         self.config["tools_installed"] = self.tools_installed()
         self.menu_install_tools.title = (
             INSTALL_TOOLS_TITLE
@@ -430,7 +391,6 @@ class Locationator(rumps.App):
 
         self.config["debug"] = self._debug
         self.config["port"] = self.port
-        self.config["menu_icon_color"] = self.get_app_icon_state()
         self.config["tools_installed"] = self.tools_installed()
 
         # self.config["start_on_login"] = self.start_on_login.state
@@ -486,7 +446,6 @@ class Locationator(rumps.App):
         open_kwargs = {}
         if encoding:
             open_kwargs["encoding"] = encoding
-        print(open_args, open_kwargs)
         return open(*open_args, **open_kwargs)
 
 
