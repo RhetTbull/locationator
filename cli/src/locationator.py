@@ -12,7 +12,7 @@ import httpx
 from exiftool import ExifTool, get_exiftool_path
 
 # Do not update __version__ manually. Use bump2version.
-__version__ = "0.0.4"
+__version__ = "0.0.5"
 
 
 @click.group()
