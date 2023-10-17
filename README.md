@@ -138,6 +138,8 @@ Locationator provides a menu option to "Install Command Line tools" that will in
 
 exiftool must be installed to use `from-exif` or `write-xmp`.
 
+>*Note*: Currently, installing the CLI requires that your user account have permissions to write to `/usr/local/bin`.  This means installation is likely to fail if running from a non-admin account. If you are running from a non-admin account, you can install the CLI by copying the `locationator` binary from the `Contents/Resources` directory of the app bundle to a directory in your path.  A more robust installation process is planned for a future release.
+
 CLI Usage:
 
 ```
