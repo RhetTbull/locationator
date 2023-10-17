@@ -16,6 +16,7 @@ import objc
 import rumps
 from AppKit import NSPasteboardTypeFileURL
 from Contacts import CNPostalAddress, CNPostalAddressStreetKey
+from copyfile import copyfile, removefile
 from CoreLocation import (
     CLGeocoder,
     CLLocation,
@@ -28,8 +29,6 @@ from CoreLocation import (
     kCLAuthorizationStatusRestricted,
 )
 from Foundation import NSURL, NSLog, NSObject, NSString, NSUTF8StringEncoding
-
-from copyfile import copyfile, removefile
 from loginitems import add_login_item, list_login_items, remove_login_item
 from server import run_server
 from utils import get_app_path, str_or_none, validate_latitude, validate_longitude

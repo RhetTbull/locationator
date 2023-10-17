@@ -13,7 +13,7 @@ from setuptools import setup
 __version__ = "0.0.5"
 
 # The file that contains the main application
-APP = ["src/locationator.py"]
+APP = ["locationator/locationator.py"]
 
 if not pathlib.Path("dist/locationator").exists():
     raise FileNotFoundError(
@@ -21,14 +21,16 @@ if not pathlib.Path("dist/locationator").exists():
     )
 
 # Include additional python modules here; probably not the best way to do this
-# but I couldn't figure out how else to get py2app to include modules in the src/ folder
+# but I couldn't figure out how else to get py2app to include modules in the locationator/ folder
 DATA_FILES = [
-    "src/icon_white.png",
-    "src/icon_black.png",
-    "src/loginitems.py",
-    "src/utils.py",
-    "src/server.py",
-    "src/copyfile.py",
+    "locationator/icon_white.png",
+    "locationator/icon_black.png",
+    "locationator/loginitems.py",
+    "locationator/utils.py",
+    "locationator/server.py",
+    "locationator/copyfile.py",
+    "locationator/exiftool_filetypes.json",
+    "locationator/exiftool.py",
     "dist/locationator",  # include CLI in app bundle
 ]
 

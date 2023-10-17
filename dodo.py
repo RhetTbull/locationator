@@ -21,16 +21,16 @@ def task_build_cli():
         "actions": [
             "rm -rf dist/",
             "rm -rf build/",
-            "pyinstaller cli/locationator.spec",
+            "pyinstaller locationator.spec",
         ],
-        "file_dep": ["cli/locationator.spec", "cli/src/locationator.py"],
+        "file_dep": ["locationator.spec", "locationator/cli.py"],
         "targets": ["dist/locationator"],
     }
 
 
 def task_build_app():
     """Build the app"""
-    file_deps = list(pathlib.Path("src").glob("*.py"))
+    file_deps = list(pathlib.Path("locationator").glob("*.py"))
     targets = get_app_files()
     return {
         "actions": ["python3 setup.py py2app"],

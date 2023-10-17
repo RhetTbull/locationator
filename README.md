@@ -168,6 +168,10 @@ Locationator uses [doit](https://pydoit.org/) to build the app. To build the app
 - `pip install -r dev_requirements.txt`
 - `doit`
 
+Locationator has two components: a server which runs as a menu bar app and is built with [py2app](https://py2app.readthedocs.io/en/latest/), and a CLI which can be used to interact with the server and is built with [pyinstaller](https://pyinstaller.org/en/stable/).
+
+The CLI must be built as a stand alone file with pyinstaller and the resulting `locationator` binary must be placed into the `locationator.app` bundle in the `Contents/resources` directory when the main app is built with py2app. The `dodo.py` script, which is run with `doit`, will do this for you.
+
 ## Testing
 
 - The app can be tested by running the tests in the `tests` directory with pytest.

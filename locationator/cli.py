@@ -38,6 +38,7 @@ def lookup(
 
     Note: if you need to pass a negative latitude or longitude, you must use the -- flag to
     prevent the command line parser from interpreting the value as an option.
+    This is the standard behavior for most command line tools.
 
     For example:
 
@@ -112,6 +113,7 @@ def write_xmp(ctx: click.Context, indent: int, no_indent: bool, filename: str):
     The following XMP fields are written (parentheses indicate the corresponding
     reverse geocode result field):
 
+    \b
     - XMP:CountryCode (ISOcountryCode)
     - XMP:Country (country)
     - XMP:State (administrativeArea)
