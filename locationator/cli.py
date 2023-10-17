@@ -16,8 +16,13 @@ __version__ = "0.0.6"
 
 
 @click.group()
-@click.option("--debug", is_flag=True)
-@click.option("--port", default=0, type=int)
+@click.option("--debug", is_flag=True, help="Enable debug mode")
+@click.option(
+    "--port",
+    default=0,
+    type=int,
+    hint="Locationator server port. Defaults to port in Locationator plist config file.",
+)
 @click.pass_context
 def cli(ctx: click.Context, debug: bool, port: int):
     ctx.ensure_object(dict)
