@@ -34,7 +34,7 @@ from server import run_server
 from utils import get_app_path, str_or_none, validate_latitude, validate_longitude
 
 # do not manually change the version; use bump2version per the README
-__version__ = "0.0.5"
+__version__ = "0.0.6"
 
 APP_NAME = "Locationator"
 APP_ICON_WHITE = "icon_white.png"
