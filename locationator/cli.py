@@ -21,7 +21,7 @@ __version__ = "0.0.6"
     "--port",
     default=0,
     type=int,
-    hint="Locationator server port. Defaults to port in Locationator plist config file.",
+    help="Locationator server port. Defaults to port in Locationator plist config file.",
 )
 @click.pass_context
 def cli(ctx: click.Context, debug: bool, port: int):

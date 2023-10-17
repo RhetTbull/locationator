@@ -6,7 +6,9 @@ import pathlib
 def get_app_files() -> list[pathlib.Path]:
     """Get list of all files in the app bundle for dependency checking"""
     if not pathlib.Path("dist/Locationator.app").exists():
-        return ["dist/Locationator.app"]
+        # return a file that doesn't exist yet but will exist when the app is built
+        # thi is a hack to make doit do the right thing when the app hasn't been built yet
+        return ["dist/Locationator.app/Contents/Info.plist"]
     return [
         p for p in pathlib.Path("dist/Locationator.app").glob("**/*") if p.is_file()
     ]

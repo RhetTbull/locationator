@@ -1,6 +1,6 @@
 # Locationator
 
-A simple macOS menubar app that provides access to the macOS Location Services reverse geocoding API.
+A simple macOS menubar app that provides access to the macOS Location Services reverse geocoding API. Also includes a command line tool for accessing the reverse geocoding API and for writing reverse geocoding data to the XMP metadata of image and video files.
 
 ## Rationale
 

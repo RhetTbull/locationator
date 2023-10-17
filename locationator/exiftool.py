@@ -7,6 +7,8 @@
     pyexiftool: https://github.com/smarnach/pyexiftool which provides more functionality """
 
 
+from __future__ import annotations
+
 import atexit
 import contextlib
 import html
