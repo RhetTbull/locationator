@@ -2,11 +2,11 @@
 
 
 a = Analysis(
-    ["src/locationator.py"],
+    ["locationator/cli.py"],
     pathex=[],
     binaries=[],
     datas=[
-        ("src/exiftool_filetypes.json", "."),
+        ("locationator/exiftool_filetypes.json", "."),
     ],
     hiddenimports=[],
     hookspath=[],
