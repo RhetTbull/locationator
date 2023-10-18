@@ -8,7 +8,7 @@ To use, you will need to install pyobjc-core and pyobjc-framework-Cocoa:
 
     `python3 -m pip install pyobjc-core pyobjc-framework-Cocoa`
 
-This function uses teh native [NSFileManager](https://developer.apple.com/documentation/foundation/nsfilemanager) API to perform the copy.
+This function uses the native [NSFileManager](https://developer.apple.com/documentation/foundation/nsfilemanager) API to perform the copy.
 The Objective-C function is called via [pyobjc](https://pyobjc.readthedocs.io/en/latest/).
 """
 
@@ -66,5 +66,40 @@ def removefile(path: str | pathlib.Path | os.PathLike):
 
     filemgr = Foundation.NSFileManager.defaultManager()
     success, error = filemgr.removeItemAtPath_error_(str(path), None)
+    if not success:
+        raise OSError(error)
+
+
+def create_symbolic_link(
+    src: str | pathlib.Path | os.PathLike, target: str | pathlib.Path | os.PathLike
+):
+    """Create a symbolic link from src to target.
+
+    Args:
+        src: Source file path.
+        target: Target file path (the link will be created at this path)
+
+    Raises:
+        OSError: If the link fails.
+        FileExistsError: If target file already exists.
+
+    Note: If target is a directory, the link will be created inside it with the same name as src.
+    """
+    if not isinstance(src, pathlib.Path):
+        src = pathlib.Path(src)
+
+    if not isinstance(target, pathlib.Path):
+        target = pathlib.Path(target)
+
+    if target.is_dir():
+        target /= src.name
+
+    if target.exists():
+        raise FileExistsError(f"{target} already exists")
+
+    filemgr = Foundation.NSFileManager.defaultManager()
+    success, error = filemgr.createSymbolicLinkAtPath_withDestinationPath_error_(
+        str(target), str(src), None
+    )
     if not success:
         raise OSError(error)
