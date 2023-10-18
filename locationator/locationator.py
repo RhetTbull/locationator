@@ -16,7 +16,7 @@ import objc
 import rumps
 from AppKit import NSPasteboardTypeFileURL
 from Contacts import CNPostalAddress, CNPostalAddressStreetKey
-from copyfile import copyfile, removefile
+from copyfile import create_symbolic_link, removefile
 from CoreLocation import (
     CLGeocoder,
     CLLocation,
@@ -264,12 +264,12 @@ class Locationator(rumps.App):
                     )
                     return False
             try:
-                copyfile(src, dst)
+                create_symbolic_link(src, dst)
             except Exception as e:
-                self.log(f"error copying {src} to {dst}: {e}")
+                self.log(f"error creating link to {src} at {dst}: {e}")
                 rumps.alert(
                     title="Error",
-                    message=f"Error copying {src} to {dst}: {e}",
+                    message=f"Error creating link to {src} at {dst}: {e}",
                     ok="OK",
                 )
                 return False
