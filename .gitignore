@@ -19,3 +19,4 @@ venv/
 .python-version
 cov.xml
 .doit.db.db
+scratch/
