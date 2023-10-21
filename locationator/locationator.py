@@ -1,5 +1,4 @@
-"""Simple MacOS menu bar / status bar app that provides access to reverse geocoding via Location Services.
-"""
+"""Simple MacOS menu bar / status bar app that provides access to reverse geocoding via Location Services. """
 
 from __future__ import annotations
 
@@ -10,13 +9,13 @@ import os
 import pathlib
 import plistlib
 import queue
+import shlex
 import threading
 
 import objc
 import rumps
 from AppKit import NSPasteboardTypeFileURL
 from Contacts import CNPostalAddress, CNPostalAddressStreetKey
-from copyfile import create_symbolic_link, removefile
 from CoreLocation import (
     CLGeocoder,
     CLLocation,
@@ -30,6 +29,7 @@ from CoreLocation import (
 )
 from Foundation import NSURL, NSLog, NSObject, NSString, NSUTF8StringEncoding
 from loginitems import add_login_item, list_login_items, remove_login_item
+from pasteboard import Pasteboard
 from server import run_server
 from utils import get_app_path, str_or_none, validate_latitude, validate_longitude
 
@@ -62,11 +62,11 @@ AUTH_STATUS = {
 LOCATION_TIMEOUT = 15
 
 # titles for install/remove menu
-INSTALL_TOOLS_TITLE = "Install command line tools"
-REMOVE_TOOLS_TITLE = "Remove command line tools"
+INSTALL_TOOLS_TITLE = "Install command line tool"
+REMOVE_TOOLS_TITLE = "Remove command line tool"
 
+CLI_NAME = "locationator"
 TOOLS_INSTALL_PATH = "/usr/local/bin"
-COMMAND_LINE_TOOLS = ["locationator"]
 
 
 class Locationator(rumps.App):
@@ -230,86 +230,115 @@ class Locationator(rumps.App):
     def install_tools(self):
         """Install the command line tools, located in Resources folder of app to /usr/local/bin"""
         self.log("on_install_tools")
+
+        # create commands to install tools
+        commands = []
+        if not pathlib.Path(TOOLS_INSTALL_PATH).exists():
+            commands.append(f"sudo mkdir -p {TOOLS_INSTALL_PATH}")
+        app_path = get_app_path()
+        src = shlex.quote(f"{app_path}/Contents/Resources/{CLI_NAME}")
+        commands.append(f"sudo ln -s {src} {TOOLS_INSTALL_PATH}/{CLI_NAME}")
+        command_str = f"osascript -e 'do shell script \"{' && '.join(commands)}\" with administrator privileges'"
+        self.log(f"install command: {command_str}")
+
+        command_word = "command" if len(commands) == 1 else "commands"
+        message = (
+            f"{APP_NAME} includes a command line tool, {CLI_NAME}, for performing reverse geocoding. "
+            "To use it, the tool must be installed in your path. "
+            f"When you press OK, the following {command_word} will be copied to the clipboard; "
+            f"you will need to paste this in a terminal window and hit Return to run the {command_word}:\n\n"
+            f"{command_str}\n\n"
+            "\nYou may be prompted for your admin password."
+        )
+
         if (
             rumps.alert(
                 "Install command line tools",
-                f"Install command line tools to\n{TOOLS_INSTALL_PATH}",
+                message,
                 "OK",
                 "Cancel",
             )
             != 1
         ):
+            self.log("user cancelled install")
             return False
-        app_path = get_app_path()
-        self.log(f"app_path: {app_path}")
-        self.log(f"installing tools to {TOOLS_INSTALL_PATH}")
-        install_path = pathlib.Path(TOOLS_INSTALL_PATH)
-        if not install_path.exists():
-            self.log(f"creating {install_path}")
-            install_path.mkdir(parents=True)
-        for tool in COMMAND_LINE_TOOLS:
-            src = f"{app_path}/Contents/Resources/{tool}"
-            dst = f"{install_path}/{tool}"
-            self.log(f"copying {src} to {dst}")
-            if pathlib.Path(dst).exists():
-                self.log(f"removing existing {dst}")
-                try:
-                    removefile(dst)
-                except Exception as e:
-                    self.log(f"error removing {dst}: {e}")
-                    rumps.alert(
-                        title="Error",
-                        message=f"Error removing {dst}: {e}",
-                        ok="OK",
-                    )
-                    return False
-            try:
-                create_symbolic_link(src, dst)
-            except Exception as e:
-                self.log(f"error creating link to {src} at {dst}: {e}")
-                rumps.alert(
-                    title="Error",
-                    message=f"Error creating link to {src} at {dst}: {e}",
-                    ok="OK",
-                )
-                return False
-            pathlib.Path(dst).chmod(0o755)
-        message = "Command lines tools installed. "
-        f"The following tools have been installed to {TOOLS_INSTALL_PATH}\n"
-        for tool in COMMAND_LINE_TOOLS:
-            message += f"- {tool}\n"
-        rumps.alert("Command line tools installed", message, "OK")
-        self.log("on_install_tools done")
-        return True
+
+        pasteboard = Pasteboard()
+        pasteboard.set_text(command_str)
+
+        message = (
+            f"Paste the {command_word} from the clipboard to a terminal window and press Return to run them. "
+            "The clipboard contains the following:\n\n"
+            f"{command_str}\n\n"
+            "You may be prompted for your admin password. "
+            "Press OK when done."
+        )
+
+        rumps.alert(
+            "Install command line tools",
+            message,
+            "OK",
+        )
+
+        if self.tools_installed():
+            self.log("on_install_tools done")
+            message = (
+                "You can now use the command line tool to perform reverse geocoding. "
+                f"Run {TOOLS_INSTALL_PATH}/{CLI_NAME} --help for more information."
+            )
+            rumps.alert("Command line tool installed", message)
+            return True
+        else:
+            self.log("on_install_tools failed")
+            rumps.alert("Command line tool was not installed")
+            return False
 
     def remove_tools(self) -> bool:
         """Remove command line tools"""
         self.log("on_remove_tools")
-        install_path = TOOLS_INSTALL_PATH
-        for tool in COMMAND_LINE_TOOLS:
-            dst = f"{install_path}/{tool}"
-            self.log(f"removing {dst}")
-            try:
-                removefile(dst)
-            except Exception as e:
-                self.log(f"error removing {dst}: {e}")
-                rumps.alert(
-                    title="Error",
-                    message=f"Error removing {dst}: {e}",
-                    ok="OK",
-                )
-                return False
+
+        command = f"sudo rm {TOOLS_INSTALL_PATH}/{CLI_NAME}"
+        command_str = f"osascript -e 'do shell script \"{command}\" with administrator privileges'"
+        self.log(f"remove command: {command_str}")
+
+        message = (
+            "When you press OK, the following command will be copied to the clipboard:\n\n"
+            f"{command_str}\n\n"
+            "You will need to paste this command into a terminal window and hit Return to run it. "
+            "You may be prompted for your admin password."
+        )
+        if rumps.alert("Remove command line tools", message, "OK", "Cancel") != 1:
+            self.log("user cancelled remove")
+            return False
+
+        pasteboard = Pasteboard()
+        pasteboard.set_text(command_str)
+
+        message = (
+            "Paste the command from the clipboard to a terminal window and press Return to run it. "
+            "The clipboard contains the following:\n\n"
+            f"{command_str}\n\n"
+            "You may be prompted for your admin password. "
+            "Press OK when done."
+        )
+        rumps.alert("Remove command line tools", message, "OK")
+
+        if self.tools_installed():
+            self.log("on_remove_tools failed")
+            rumps.alert(f"Command line tool was not removed")
+            return False
+        else:
+            self.log("on_remove_tools done")
+            rumps.alert("Command line tool removed")
+
         self.log("on_remove_tools done")
         return True
 
     def tools_installed(self) -> bool:
         """Return True if command line tools installed"""
         install_path = TOOLS_INSTALL_PATH
-        for tool in COMMAND_LINE_TOOLS:
-            dst = f"{install_path}/{tool}"
-            if not pathlib.Path(dst).exists():
-                return False
-        return True
+        # use os.path instead of pathlib because pathlib may raise PermissionError
+        return os.path.exists(os.path.join(install_path, CLI_NAME))
 
     def reverse_geocode(
         self, latitude: float, longitude: float, geocode_queue: queue.Queue

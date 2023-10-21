@@ -49,7 +49,7 @@ PLIST = {
     # NSLocationWhenInUseUsageDescription is the message that appears when the app asks for permission to use location services
     "NSLocationWhenInUseUsageDescription": "Locationator needs access to your location to detect your current location and to perform reverse geocoding.",
     # NSSystemAdministrationUsageDescription is the message that tells the user why the app is requesting to manipulate the system configuration.
-    "NSSystemAdministrationUsageDescription": "Locationator needs permission to install the command-line tools.",
+    # "NSSystemAdministrationUsageDescription": "Locationator needs permission to install the command-line tools.",
     # NSServices is a list of services that the app provides that will appear in the Services menu
     # For more information on NSServices, see: https://developer.apple.com/documentation/bundleresources/information_property_list/nsservices?language=objc
     # "NSServices": [
