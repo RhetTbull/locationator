@@ -53,7 +53,7 @@ PLIST = {
     # For more information on NSServices, see: https://developer.apple.com/documentation/bundleresources/information_property_list/nsservices?language=objc
     "NSServices": [
         {
-            "NSMenuItem": {"default": "Get reverse geocoding with Locationator"},
+            "NSMenuItem": {"default": "Locationator: reverse geocode"},
             "NSMessage": "getReverseGeocoding",
             "NSPortName": "Locationator",
             "NSUserData": "getReverseGeocoding",

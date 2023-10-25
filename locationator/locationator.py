@@ -42,7 +42,13 @@ from image_metadata import get_image_location
 from loginitems import add_login_item, list_login_items, remove_login_item
 from pasteboard import Pasteboard
 from server import run_server
-from utils import get_app_path, str_or_none, validate_latitude, validate_longitude
+from utils import (
+    flatten_dict,
+    get_app_path,
+    str_or_none,
+    validate_latitude,
+    validate_longitude,
+)
 
 # do not manually change the version; use bump2version per the README
 __version__ = "0.0.7"
@@ -391,43 +397,46 @@ class Locationator(rumps.App):
 
         result = ReverseGeocodeResult()
 
-        def _geocode_completion_handler(placemarks, completion_error):
-            """Handle completion of reverse geocode"""
-            nonlocal result
-            self.log(f"geocode_completion_handler: {placemarks}")
-            if completion_error:
-                result.error = completion_error
-            else:
-                placemark = placemarks[0]
-                result.data = placemark_to_dict(placemark)
-            result.done = True
-            self.log(f"geocode_completion_handler done: {result=}")
+        with objc.autorelease_pool():
 
-        geocoder = CLGeocoder.alloc().init()
-        location = CLLocation.alloc().initWithLatitude_longitude_(
-            float(latitude), float(longitude)
-        )
-        geocoder.reverseGeocodeLocation_completionHandler_(
-            location, _geocode_completion_handler
-        )
+            def _geocode_completion_handler(placemarks, completion_error):
+                """Handle completion of reverse geocode"""
+                nonlocal result
+                self.log(f"geocode_completion_handler: {placemarks}")
+                if completion_error:
+                    result.error = completion_error
+                else:
+                    placemark = placemarks[0]
+                    result.data = placemark_to_dict(placemark)
+                result.done = True
+                self.log(f"geocode_completion_handler done: {result=}")
 
-        start_t = time.time()
-        while not result.done:
-            # wait for completion handler to set result.done
-            # use NSRunLoop to allow other events to be processed
-            # I tried this with using a threading.Event() and queue.Queue()
-            # as in the server but it blocked the run loop
-            NSRunLoop.currentRunLoop().runUntilDate_(
-                NSDate.dateWithTimeIntervalSinceNow_(0.05)
+            geocoder = CLGeocoder.alloc().init()
+            location = CLLocation.alloc().initWithLatitude_longitude_(
+                float(latitude), float(longitude)
             )
-            if time.time() - start_t > LOCATION_TIMEOUT:
-                raise ReverseGeocodeError("Timeout waiting for reverse geocode")
+            geocoder.reverseGeocodeLocation_completionHandler_(
+                location, _geocode_completion_handler
+            )
 
-        self.log(f"reverse_geocode done: {result=}")
+            start_t = time.time()
+            while not result.done:
+                # wait for completion handler to set result.done
+                # use NSRunLoop to allow other events to be processed
+                # I tried this with using a threading.Event() and queue.Queue()
+                # as in the server but it blocked the run loop
+                NSRunLoop.currentRunLoop().runUntilDate_(
+                    NSDate.dateWithTimeIntervalSinceNow_(0.05)
+                )
+                if time.time() - start_t > LOCATION_TIMEOUT:
+                    self.log("timeout waiting for reverse geocode")
+                    raise ReverseGeocodeError("Timeout waiting for reverse geocode")
 
-        if result.error:
-            raise ReverseGeocodeError(result.error)
-        return result.data
+            self.log(f"reverse_geocode done: {result=}")
+
+            if result.error:
+                raise ReverseGeocodeError(result.error)
+            return result.data
 
     def reverse_geocode_with_queue(
         self, latitude: float, longitude: float, geocode_queue: queue.Queue
@@ -738,40 +747,53 @@ class ServiceProvider(NSObject):
         """
         self.app.log("getReverseGeocoding_userData_error_ called via Services menu")
 
-        try:
-            for item in pasteboard.pasteboardItems():
-                # pasteboard will contain one or more URLs to image files passed by the Services menu
-                pb_url_data = item.dataForType_(NSPasteboardTypeFileURL)
-                pb_url = NSURL.URLWithString_(
-                    NSString.alloc().initWithData_encoding_(
-                        pb_url_data, NSUTF8StringEncoding
+        with objc.autorelease_pool():
+            try:
+                for item in pasteboard.pasteboardItems():
+                    # pasteboard will contain one or more URLs to image files passed by the Services menu
+                    pb_url_data = item.dataForType_(NSPasteboardTypeFileURL)
+                    pb_url = NSURL.URLWithString_(
+                        NSString.alloc().initWithData_encoding_(
+                            pb_url_data, NSUTF8StringEncoding
+                        )
                     )
-                )
-                self.app.log(f"processing file from Services menu: {pb_url.path()}")
-                try:
-                    latitude, longitude = get_image_location(pb_url.path())
-                except ValueError as e:
-                    self.app.log(f"error processing file: {e}")
-                    return ErrorValue(e)
+                    self.app.log(f"processing file from Services menu: {pb_url.path()}")
+                    try:
+                        latitude, longitude = get_image_location(pb_url.path())
+                    except ValueError as e:
+                        self.app.log(f"error processing file: {e}")
+                        rumps.alert("Locationator Error", str(e), ok="OK")
+                        return ErrorValue(e)
 
-                try:
-                    result = self.app.reverse_geocode(latitude, longitude)
-                    self.app.log(f"reverse geocode result: {result}")
-                except ReverseGeocodeError as e:
-                    self.app.log(f"reverse geocode error: {e}")
-                    return ErrorValue(e)
+                    try:
+                        result = self.app.reverse_geocode(latitude, longitude)
+                        self.app.log(f"reverse geocode result: {result}")
+                    except ReverseGeocodeError as e:
+                        self.app.log(f"reverse geocode error: {e}")
+                        rumps.alert("Locationator Error", str(e), ok="OK")
+                        return ErrorValue(e)
 
-                # place result on pasteboard
-                result_json = json.dumps(result)
-                pasteboard = Pasteboard()
-                pasteboard.set_text(result_json)
-                rumps.alert(
-                    title="Reverse Geocode Result", message=result_json, ok="OK"
-                )
-        except Exception as e:
-            return ErrorValue(e)
+                    # place result on pasteboard
+                    result_str = format_result_dict(result)
+                    pasteboard = Pasteboard()
+                    pasteboard.set_text(result_str)
+                    rumps.alert(
+                        title="Reverse Geocode Result", message=result_str, ok="OK"
+                    )
+            except Exception as e:
+                rumps.alert("Locationator Error", str(e), ok="OK")
+                return ErrorValue(e)
 
         return None
+
+
+def format_result_dict(d: dict) -> str:
+    """Format a reverse geocode result dict for display"""
+    result_dict = flatten_dict(d)
+    for key, value in result_dict.items():
+        if isinstance(value, (list, tuple)):
+            result_dict[key] = ", ".join(str(v) for v in value)
+    return "\n".join(f"{key}: {value}" for key, value in result_dict.items())
 
 
 if __name__ == "__main__":
