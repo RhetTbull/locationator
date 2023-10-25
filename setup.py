@@ -31,6 +31,7 @@ DATA_FILES = [
     "locationator/copyfile.py",
     "locationator/exiftool_filetypes.json",
     "locationator/exiftool.py",
+    "locationator/image_metadata.py",
     "dist/locationator",  # include CLI in app bundle
 ]
 
@@ -48,21 +49,19 @@ PLIST = {
     "NSAppleEventsUsageDescription": "Locationator needs permission to send AppleScript events to add itself to Login Items.",
     # NSLocationWhenInUseUsageDescription is the message that appears when the app asks for permission to use location services
     "NSLocationWhenInUseUsageDescription": "Locationator needs access to your location to detect your current location and to perform reverse geocoding.",
-    # NSSystemAdministrationUsageDescription is the message that tells the user why the app is requesting to manipulate the system configuration.
-    # "NSSystemAdministrationUsageDescription": "Locationator needs permission to install the command-line tools.",
     # NSServices is a list of services that the app provides that will appear in the Services menu
     # For more information on NSServices, see: https://developer.apple.com/documentation/bundleresources/information_property_list/nsservices?language=objc
-    # "NSServices": [
-    #     {
-    #         "NSMenuItem": {"default": "Detect text with Locationator"},
-    #         "NSMessage": "detectTextInImage",
-    #         "NSPortName": "Locationator",
-    #         "NSUserData": "detectTextInImage",
-    #         "NSRequiredContext": {"NSTextContent": "FilePath"},
-    #         "NSSendTypes": ["NSPasteboardTypeURL"],
-    #         "NSSendFileTypes": ["public.image"],
-    #     },
-    # ],
+    "NSServices": [
+        {
+            "NSMenuItem": {"default": "Get reverse geocoding with Locationator"},
+            "NSMessage": "getReverseGeocoding",
+            "NSPortName": "Locationator",
+            "NSUserData": "getReverseGeocoding",
+            "NSRequiredContext": {"NSTextContent": "FilePath"},
+            "NSSendTypes": ["NSPasteboardTypeURL"],
+            "NSSendFileTypes": ["public.image"],
+        },
+    ],
 }
 
 # Options for py2app

@@ -6,5 +6,6 @@ pyinstaller>=6.1.0
 pyobjc-core>=9.2
 pyobjc-framework-Contacts>=9.2
 pyobjc-framework-CoreLocation>=9.2
+pyobjc-framework-Quartz>=9.2
 rumps>=0.4.0
 wheel>=0.41.2
