@@ -38,7 +38,13 @@ from Foundation import (
     NSString,
     NSUTF8StringEncoding,
 )
-from image_metadata import get_image_location
+from image_metadata import (
+    load_image_location,
+    load_image_metadata_ref,
+    metadata_ref_create_mutable,
+    metadata_ref_set_tag,
+    metadata_ref_write_to_file,
+)
 from loginitems import add_login_item, list_login_items, remove_login_item
 from pasteboard import Pasteboard
 from server import run_server
@@ -730,7 +736,7 @@ class ServiceProvider(NSObject):
     ) -> str | None:
         """Get reverse geocoding for an image on the clipboard.
 
-        This method will be called by the Services menu when the user selects "Get reverse geocoding with Locationator".
+        This method will be called by the Services menu when the user selects "Locationator: reverse geocode".
         It is specified in the setup.py NSMessage attribute. The method name in NSMessage is `getReverseGeocoding`
         but the actual Objective-C signature is `getReverseGeocoding:userData:error:` hence the matching underscores
         in the python method name.
@@ -759,7 +765,7 @@ class ServiceProvider(NSObject):
                     )
                     self.app.log(f"processing file from Services menu: {pb_url.path()}")
                     try:
-                        latitude, longitude = get_image_location(pb_url.path())
+                        latitude, longitude = load_image_location(pb_url.path())
                     except ValueError as e:
                         self.app.log(f"error processing file: {e}")
                         rumps.alert("Locationator Error", str(e), ok="OK")
@@ -786,6 +792,63 @@ class ServiceProvider(NSObject):
 
         return None
 
+    @serviceSelector
+    def writeReverseGeocodingToXMP_userData_error_(
+        self, pasteboard, userdata, error
+    ) -> str | None:
+        """Write reverse geocode location data to XMP metadata in a file.
+
+        This method will be called by the Services menu when the user selects "Locationator: write XMP data".
+        It is specified in the setup.py NSMessage attribute. The method name in NSMessage is `getReverseGeocoding`
+        but the actual Objective-C signature is `getReverseGeocoding:userData:error:` hence the matching underscores
+        in the python method name.
+
+        Args:
+            pasteboard: NSPasteboard object containing the URLs of the image files to process
+            userdata: Unused, passed by the Services menu as value of NSUserData attribute in setup.py;
+                can be used to pass additional data to the service if needed
+            error: Unused; in Objective-C, error is a pointer to an NSError object that will be set if an error occurs;
+                when using pyobjc, errors are returned as str values and the actual error argument is ignored.
+
+        Returns:
+            error: str value containing the error message if an error occurs, otherwise None
+        """
+        self.app.log("getReverseGeocoding_userData_error_ called via Services menu")
+
+        with objc.autorelease_pool():
+            try:
+                for item in pasteboard.pasteboardItems():
+                    # pasteboard will contain one or more URLs to image files passed by the Services menu
+                    pb_url_data = item.dataForType_(NSPasteboardTypeFileURL)
+                    pb_url = NSURL.URLWithString_(
+                        NSString.alloc().initWithData_encoding_(
+                            pb_url_data, NSUTF8StringEncoding
+                        )
+                    )
+                    self.app.log(f"processing file from Services menu: {pb_url.path()}")
+                    try:
+                        latitude, longitude = load_image_location(pb_url.path())
+                    except ValueError as e:
+                        self.app.log(f"error processing file: {e}")
+                        rumps.alert("Locationator Error", str(e), ok="OK")
+                        return ErrorValue(e)
+
+                    try:
+                        result = self.app.reverse_geocode(latitude, longitude)
+                        self.app.log(f"reverse geocode result: {result}")
+                        xmp = write_xmp_metadata(pb_url.path(), result)
+                        self.app.log(f"XMP metadata written: {json.dumps(xmp)}")
+                    except ReverseGeocodeError as e:
+                        self.app.log(f"reverse geocode error: {e}")
+                        rumps.alert("Locationator Error", str(e), ok="OK")
+                        return ErrorValue(e)
+
+            except Exception as e:
+                rumps.alert("Locationator Error", str(e), ok="OK")
+                return ErrorValue(e)
+
+        return None
+
 
 def format_result_dict(d: dict) -> str:
     """Format a reverse geocode result dict for display"""
@@ -794,6 +857,45 @@ def format_result_dict(d: dict) -> str:
         if isinstance(value, (list, tuple)):
             result_dict[key] = ", ".join(str(v) for v in value)
     return "\n".join(f"{key}: {value}" for key, value in result_dict.items())
+
+
+def write_xmp_metadata(filepath: str, results: dict[str, Any]) -> dict[str, Any]:
+    """Write reverse geolocation-related fields to file metadata
+
+    Args:
+        filename (str): Path to file
+        results (dict): Reverse geocode results
+
+    Note: The following XMP fields are written (parentheses indicate the corresponding
+    reverse geocode result field):
+
+    - XMP:CountryCode / Iptc4xmpCore:CountryCode (ISOcountryCode)
+    - XMP:Country / photoshop:Country (country)
+    - XMP:State / photoshop:State (administrativeArea)
+    - XMP:City / photoshop:City (locality)
+    - XMP:Location / Iptc4xmpCore:Location (name)
+    """
+
+    metadata = {
+        "Iptc4xmpCore:CountryCode": results["ISOcountryCode"],
+        "photoshop:Country": results["country"],
+        "photoshop:State": results["administrativeArea"],
+        "photoshop:City": results["locality"],
+        "Iptc4xmpCore:Location": results["name"],
+    }
+
+    metadata_ref = load_image_metadata_ref(filepath)
+    metadata_ref_mutable = metadata_ref_create_mutable(metadata_ref)
+    for key, value in metadata.items():
+        metadata_ref_mutable = metadata_ref_set_tag(metadata_ref_mutable, key, value)
+
+    metadata_ref_write_to_file(filepath, metadata_ref_mutable)
+
+    # These are Core Foundation objects that need to be released
+    del metadata_ref
+    del metadata_ref_mutable
+
+    return metadata
 
 
 if __name__ == "__main__":

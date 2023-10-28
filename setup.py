@@ -23,16 +23,14 @@ if not pathlib.Path("dist/locationator").exists():
 # Include additional python modules here; probably not the best way to do this
 # but I couldn't figure out how else to get py2app to include modules in the locationator/ folder
 DATA_FILES = [
-    "locationator/icon_white.png",
-    "locationator/icon_black.png",
-    "locationator/loginitems.py",
-    "locationator/utils.py",
-    "locationator/server.py",
-    "locationator/copyfile.py",
-    "locationator/exiftool_filetypes.json",
-    "locationator/exiftool.py",
-    "locationator/image_metadata.py",
     "dist/locationator",  # include CLI in app bundle
+    "locationator/copyfile.py",
+    "locationator/icon_black.png",
+    "locationator/icon_white.png",
+    "locationator/image_metadata.py",
+    "locationator/loginitems.py",
+    "locationator/server.py",
+    "locationator/utils.py",
 ]
 
 # These values will be included by py2app into the Info.plist file in the App bundle
@@ -55,8 +53,15 @@ PLIST = {
         {
             "NSMenuItem": {"default": "Locationator: reverse geocode"},
             "NSMessage": "getReverseGeocoding",
-            "NSPortName": "Locationator",
             "NSUserData": "getReverseGeocoding",
+            "NSRequiredContext": {"NSTextContent": "FilePath"},
+            "NSSendTypes": ["NSPasteboardTypeURL"],
+            "NSSendFileTypes": ["public.image"],
+        },
+        {
+            "NSMenuItem": {"default": "Locationator: write XMP data"},
+            "NSMessage": "writeReverseGeocodingToXMP",
+            "NSUserData": "writeReverseGeocodingToXMP",
             "NSRequiredContext": {"NSTextContent": "FilePath"},
             "NSSendTypes": ["NSPasteboardTypeURL"],
             "NSSendFileTypes": ["public.image"],
