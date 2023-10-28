@@ -21,6 +21,12 @@ Alternatively, to build from source:
 - python3 setup.py py2app
 - Copy dist/Locationator.app to /Applications
 
+## Screenshots
+
+![Locationator](images/menubar.png)
+
+![Locationator](images/reverse_geocode.png)
+
 ## Usage
 
 Locationator server is a very simple HTTP server for handling local requests. It supports two endpoints, `GET /` and `GET /reverse_geocode`.
