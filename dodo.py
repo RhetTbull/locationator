@@ -25,7 +25,12 @@ def task_build_cli():
             "rm -rf build/",
             "pyinstaller locationator.spec",
         ],
-        "file_dep": ["locationator.spec", "locationator/cli.py"],
+        "file_dep": [
+            "locationator.spec",
+            "locationator/cli.py",
+            "locationator/exiftool.py",
+            "locationator/exiftool_filetypes.py",
+        ],
         "targets": ["dist/locationator"],
     }
 
