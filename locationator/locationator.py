@@ -57,7 +57,7 @@ from utils import (
 )
 
 # do not manually change the version; use bump2version per the README
-__version__ = "0.0.7"
+__version__ = "0.1.0"
 
 APP_NAME = "Locationator"
 APP_ICON_WHITE = "icon_white.png"
