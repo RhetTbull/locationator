@@ -15,11 +15,12 @@ import html
 import json
 import logging
 import os
-import pathlib
 import re
 import shutil
 import subprocess
 from functools import lru_cache  # pylint: disable=syntax-error
+
+from exiftool_filetypes import EXIFTOOL_SUPPORTED_FILETYPES
 
 __all__ = [
     "escape_str",
@@ -37,11 +38,6 @@ EXIFTOOL_STAYOPEN_EOF_LEN = len(EXIFTOOL_STAYOPEN_EOF)
 
 # list of exiftool processes to cleanup when exiting or when terminate is called
 EXIFTOOL_PROCESSES = []
-
-# exiftool supported file types, created by utils/exiftool_supported_types.py
-EXIFTOOL_FILETYPES_JSON = "exiftool_filetypes.json"
-with (pathlib.Path(__file__).parent / EXIFTOOL_FILETYPES_JSON).open("r") as f:
-    EXIFTOOL_SUPPORTED_FILETYPES = json.load(f)
 
 
 def exiftool_can_write(suffix: str) -> bool:

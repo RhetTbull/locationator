@@ -11,10 +11,12 @@ import plistlib
 import queue
 import shlex
 import threading
+import time
+from typing import Any
 
 import objc
 import rumps
-from AppKit import NSPasteboardTypeFileURL
+from AppKit import NSApplication, NSPasteboardTypeFileURL
 from Contacts import CNPostalAddress, CNPostalAddressStreetKey
 from CoreLocation import (
     CLGeocoder,
@@ -27,14 +29,35 @@ from CoreLocation import (
     kCLAuthorizationStatusNotDetermined,
     kCLAuthorizationStatusRestricted,
 )
-from Foundation import NSURL, NSLog, NSObject, NSString, NSUTF8StringEncoding
+from Foundation import (
+    NSURL,
+    NSDate,
+    NSLog,
+    NSObject,
+    NSRunLoop,
+    NSString,
+    NSUTF8StringEncoding,
+)
+from image_metadata import (
+    load_image_location,
+    load_image_metadata_ref,
+    metadata_ref_create_mutable,
+    metadata_ref_set_tag,
+    metadata_ref_write_to_file,
+)
 from loginitems import add_login_item, list_login_items, remove_login_item
 from pasteboard import Pasteboard
 from server import run_server
-from utils import get_app_path, str_or_none, validate_latitude, validate_longitude
+from utils import (
+    flatten_dict,
+    get_app_path,
+    str_or_none,
+    validate_latitude,
+    validate_longitude,
+)
 
 # do not manually change the version; use bump2version per the README
-__version__ = "0.0.6"
+__version__ = "0.0.7"
 
 APP_NAME = "Locationator"
 APP_ICON_WHITE = "icon_white.png"
@@ -67,6 +90,12 @@ REMOVE_TOOLS_TITLE = "Remove command line tool"
 
 CLI_NAME = "locationator"
 TOOLS_INSTALL_PATH = "/usr/local/bin"
+
+
+class ReverseGeocodeError(Exception):
+    """Error raised when reverse geocode fails"""
+
+    pass
 
 
 class Locationator(rumps.App):
@@ -132,6 +161,12 @@ class Locationator(rumps.App):
 
         # start the HTTP server
         self.start_server()
+
+        # initialize the service provider class which handles actions from the Services menu
+        # pass reference to self so the service provider can access the app's methods and state
+        self.service_provider = ServiceProvider.alloc().initWithApp_(self)
+        # register the service provider with the Services menu
+        NSApplication.sharedApplication().setServicesProvider_(self.service_provider)
 
     def authorize(self):
         """Request authorization for Location Services"""
@@ -340,10 +375,79 @@ class Locationator(rumps.App):
         # use os.path instead of pathlib because pathlib may raise PermissionError
         return os.path.exists(os.path.join(install_path, CLI_NAME))
 
-    def reverse_geocode(
+    def reverse_geocode(self, latitude: float, longitude: float) -> dict[str, Any]:
+        """Perform reverse geocode of latitude/longitude
+
+        Args:
+            latitude: latitude to reverse geocode
+            longitude: longitude to reverse geocode
+
+        Returns: dict containing the reverse geocode result
+
+        Raises: ReverseGeocodeError if reverse geocode fails
+
+        Note: This method may block for up to LOCATION_TIMEOUT seconds
+        while waiting for the reverse geocode to complete.
+        """
+
+        class ReverseGeocodeResult:
+            """Simple class to hold the result for the completion handler"""
+
+            def __init__(self):
+                self.data = {}
+                self.error = None
+                self.done = False
+
+            def __str__(self):
+                return f"ReverseGeocodeResult(data={self.data}, error={self.error}, done={self.done})"
+
+        result = ReverseGeocodeResult()
+
+        with objc.autorelease_pool():
+
+            def _geocode_completion_handler(placemarks, completion_error):
+                """Handle completion of reverse geocode"""
+                nonlocal result
+                self.log(f"geocode_completion_handler: {placemarks}")
+                if completion_error:
+                    result.error = completion_error
+                else:
+                    placemark = placemarks[0]
+                    result.data = placemark_to_dict(placemark)
+                result.done = True
+                self.log(f"geocode_completion_handler done: {result=}")
+
+            geocoder = CLGeocoder.alloc().init()
+            location = CLLocation.alloc().initWithLatitude_longitude_(
+                float(latitude), float(longitude)
+            )
+            geocoder.reverseGeocodeLocation_completionHandler_(
+                location, _geocode_completion_handler
+            )
+
+            start_t = time.time()
+            while not result.done:
+                # wait for completion handler to set result.done
+                # use NSRunLoop to allow other events to be processed
+                # I tried this with using a threading.Event() and queue.Queue()
+                # as in the server but it blocked the run loop
+                NSRunLoop.currentRunLoop().runUntilDate_(
+                    NSDate.dateWithTimeIntervalSinceNow_(0.05)
+                )
+                if time.time() - start_t > LOCATION_TIMEOUT:
+                    self.log("timeout waiting for reverse geocode")
+                    raise ReverseGeocodeError("Timeout waiting for reverse geocode")
+
+            self.log(f"reverse_geocode done: {result=}")
+
+            if result.error:
+                raise ReverseGeocodeError(result.error)
+            return result.data
+
+    def reverse_geocode_with_queue(
         self, latitude: float, longitude: float, geocode_queue: queue.Queue
     ):
-        """Perform reverse geocode of latitude/longitude"""
+        """Perform reverse geocode of latitude/longitude; return result via queue"""
         self.log(f"reverse_geocode: {latitude}, {longitude}")
         with objc.autorelease_pool():
             geocoder = CLGeocoder.alloc().init()
@@ -369,12 +473,15 @@ class Locationator(rumps.App):
 
                 placemark = placemarks.objectAtIndex_(0)
                 placemark_dict = placemark_to_dict(placemark)
+                self.log(f"geocode_completion_handler done: {placemark_dict=}")
                 geocode_queue.put((True, json.dumps(placemark_dict)))
+                self.log(f"geocode_completion_handler done: {geocode_queue=}")
 
             # start the request then wait for completion
             geocoder.reverseGeocodeLocation_completionHandler_(
                 location, geocode_completion_handler
             )
+            self.log(f"reverse_geocode done: {geocode_queue=}")
 
     def log(self, msg: str):
         """Log a message to unified log."""
@@ -610,70 +717,185 @@ def ErrorValue(e):
     return e
 
 
-# class ServiceProvider(NSObject):
-#     """Service provider class to handle messages from the Services menu
+class ServiceProvider(NSObject):
+    """Service provider class to handle messages from the Services menu
 
-#     Initialize with ServiceProvider.alloc().initWithApp_(app)
-#     """
+    Initialize with ServiceProvider.alloc().initWithApp_(app)
+    """
 
-#     app: Locationator | None = None
+    app: Locationator | None = None
 
-#     def initWithApp_(self, app: Locationator):
-#         self = objc.super(ServiceProvider, self).init()
-#         self.app = app
-#         return self
+    def initWithApp_(self, app: Locationator):
+        self = objc.super(ServiceProvider, self).init()
+        self.app = app
+        return self
 
-#     @serviceSelector
-#     def detectTextInImage_userData_error_(
-#         self, pasteboard, userdata, error
-#     ) -> str | None:
-#         """Detect text in an image on the clipboard.
+    @serviceSelector
+    def getReverseGeocoding_userData_error_(
+        self, pasteboard, userdata, error
+    ) -> str | None:
+        """Get reverse geocoding for an image on the clipboard.
 
-#         This method will be called by the Services menu when the user selects "Detect text with Locationator".
-#         It is specified in the setup.py NSMessage attribute. The method name in NSMessage is `detectTextInImage`
-#         but the actual Objective-C signature is `detectTextInImage:userData:error:` hence the matching underscores
-#         in the python method name.
+        This method will be called by the Services menu when the user selects "Locationator: reverse geocode".
+        It is specified in the setup.py NSMessage attribute. The method name in NSMessage is `getReverseGeocoding`
+        but the actual Objective-C signature is `getReverseGeocoding:userData:error:` hence the matching underscores
+        in the python method name.
 
-#         Args:
-#             pasteboard: NSPasteboard object containing the URLs of the image files to process
-#             userdata: Unused, passed by the Services menu as value of NSUserData attribute in setup.py;
-#                 can be used to pass additional data to the service if needed
-#             error: Unused; in Objective-C, error is a pointer to an NSError object that will be set if an error occurs;
-#                 when using pyobjc, errors are returned as str values and the actual error argument is ignored.
+        Args:
+            pasteboard: NSPasteboard object containing the URLs of the image files to process
+            userdata: Unused, passed by the Services menu as value of NSUserData attribute in setup.py;
+                can be used to pass additional data to the service if needed
+            error: Unused; in Objective-C, error is a pointer to an NSError object that will be set if an error occurs;
+                when using pyobjc, errors are returned as str values and the actual error argument is ignored.
 
-#         Returns:
-#             error: str value containing the error message if an error occurs, otherwise None
+        Returns:
+            error: str value containing the error message if an error occurs, otherwise None
+        """
+        self.app.log("getReverseGeocoding_userData_error_ called via Services menu")
 
-#         Note: because this method is explicitly invoked by the user via the Services menu, it will
-#         be called and files processed even if the app is paused.
+        with objc.autorelease_pool():
+            try:
+                for item in pasteboard.pasteboardItems():
+                    # pasteboard will contain one or more URLs to image files passed by the Services menu
+                    pb_url_data = item.dataForType_(NSPasteboardTypeFileURL)
+                    pb_url = NSURL.URLWithString_(
+                        NSString.alloc().initWithData_encoding_(
+                            pb_url_data, NSUTF8StringEncoding
+                        )
+                    )
+                    self.app.log(f"processing file from Services menu: {pb_url.path()}")
+                    try:
+                        latitude, longitude = load_image_location(pb_url.path())
+                    except ValueError as e:
+                        self.app.log(f"error processing file: {e}")
+                        rumps.alert("Locationator Error", str(e), ok="OK")
+                        return ErrorValue(e)
 
-#         """
-#         self.app.log("detectTextInImage_userData_error_ called via Services menu")
+                    try:
+                        result = self.app.reverse_geocode(latitude, longitude)
+                        self.app.log(f"reverse geocode result: {result}")
+                    except ReverseGeocodeError as e:
+                        self.app.log(f"reverse geocode error: {e}")
+                        rumps.alert("Locationator Error", str(e), ok="OK")
+                        return ErrorValue(e)
 
-#         try:
-#             for item in pasteboard.pasteboardItems():
-#                 # pasteboard will contain one or more URLs to image files passed by the Services menu
-#                 pb_url_data = item.dataForType_(NSPasteboardTypeFileURL)
-#                 pb_url = NSURL.URLWithString_(
-#                     NSString.alloc().initWithData_encoding_(
-#                         pb_url_data, NSUTF8StringEncoding
-#                     )
-#                 )
-#                 self.app.log(f"processing file from Services menu: {pb_url.path()}")
-#                 image = Quartz.CIImage.imageWithContentsOfURL_(pb_url)
-#                 detected_text = self.app.process_image(image)
-#                 if self.app.show_notification.state:
-#                     self.app.notification(
-#                         title="Processed Image",
-#                         subtitle=f"{pb_url.path()}",
-#                         message=f"Detected text: {detected_text}"
-#                         if detected_text
-#                         else "No text detected",
-#                     )
-#         except Exception as e:
-#             return ErrorValue(e)
+                    # place result on pasteboard
+                    result_str = format_result_dict(result)
+                    pasteboard = Pasteboard()
+                    pasteboard.set_text(result_str)
+                    rumps.alert(
+                        title="Reverse Geocode Result", message=result_str, ok="OK"
+                    )
+            except Exception as e:
+                rumps.alert("Locationator Error", str(e), ok="OK")
+                return ErrorValue(e)
 
-#         return None
+        return None
+
+    @serviceSelector
+    def writeReverseGeocodingToXMP_userData_error_(
+        self, pasteboard, userdata, error
+    ) -> str | None:
+        """Write reverse geocode location data to XMP metadata in a file.
+
+        This method will be called by the Services menu when the user selects "Locationator: write XMP data".
+        It is specified in the setup.py NSMessage attribute. The method name in NSMessage is `getReverseGeocoding`
+        but the actual Objective-C signature is `getReverseGeocoding:userData:error:` hence the matching underscores
+        in the python method name.
+
+        Args:
+            pasteboard: NSPasteboard object containing the URLs of the image files to process
+            userdata: Unused, passed by the Services menu as value of NSUserData attribute in setup.py;
+                can be used to pass additional data to the service if needed
+            error: Unused; in Objective-C, error is a pointer to an NSError object that will be set if an error occurs;
+                when using pyobjc, errors are returned as str values and the actual error argument is ignored.
+
+        Returns:
+            error: str value containing the error message if an error occurs, otherwise None
+        """
+        self.app.log("getReverseGeocoding_userData_error_ called via Services menu")
+
+        with objc.autorelease_pool():
+            try:
+                for item in pasteboard.pasteboardItems():
+                    # pasteboard will contain one or more URLs to image files passed by the Services menu
+                    pb_url_data = item.dataForType_(NSPasteboardTypeFileURL)
+                    pb_url = NSURL.URLWithString_(
+                        NSString.alloc().initWithData_encoding_(
+                            pb_url_data, NSUTF8StringEncoding
+                        )
+                    )
+                    self.app.log(f"processing file from Services menu: {pb_url.path()}")
+                    try:
+                        latitude, longitude = load_image_location(pb_url.path())
+                    except ValueError as e:
+                        self.app.log(f"error processing file: {e}")
+                        rumps.alert("Locationator Error", str(e), ok="OK")
+                        return ErrorValue(e)
+
+                    try:
+                        result = self.app.reverse_geocode(latitude, longitude)
+                        self.app.log(f"reverse geocode result: {result}")
+                        xmp = write_xmp_metadata(pb_url.path(), result)
+                        self.app.log(f"XMP metadata written: {json.dumps(xmp)}")
+                    except ReverseGeocodeError as e:
+                        self.app.log(f"reverse geocode error: {e}")
+                        rumps.alert("Locationator Error", str(e), ok="OK")
+                        return ErrorValue(e)
+
+            except Exception as e:
+                rumps.alert("Locationator Error", str(e), ok="OK")
+                return ErrorValue(e)
+
+        return None
+
+
+def format_result_dict(d: dict) -> str:
+    """Format a reverse geocode result dict for display"""
+    result_dict = flatten_dict(d)
+    for key, value in result_dict.items():
+        if isinstance(value, (list, tuple)):
+            result_dict[key] = ", ".join(str(v) for v in value)
+    return "\n".join(f"{key}: {value}" for key, value in result_dict.items())
+
+
+def write_xmp_metadata(filepath: str, results: dict[str, Any]) -> dict[str, Any]:
+    """Write reverse geolocation-related fields to file metadata
+
+    Args:
+        filename (str): Path to file
+        results (dict): Reverse geocode results
+
+    Note: The following XMP fields are written (parentheses indicate the corresponding
+    reverse geocode result field):
+
+    - XMP:CountryCode / Iptc4xmpCore:CountryCode (ISOcountryCode)
+    - XMP:Country / photoshop:Country (country)
+    - XMP:State / photoshop:State (administrativeArea)
+    - XMP:City / photoshop:City (locality)
+    - XMP:Location / Iptc4xmpCore:Location (name)
+    """
+
+    metadata = {
+        "Iptc4xmpCore:CountryCode": results["ISOcountryCode"],
+        "photoshop:Country": results["country"],
+        "photoshop:State": results["administrativeArea"],
+        "photoshop:City": results["locality"],
+        "Iptc4xmpCore:Location": results["name"],
+    }
+
+    metadata_ref = load_image_metadata_ref(filepath)
+    metadata_ref_mutable = metadata_ref_create_mutable(metadata_ref)
+    for key, value in metadata.items():
+        metadata_ref_mutable = metadata_ref_set_tag(metadata_ref_mutable, key, value)
+
+    metadata_ref_write_to_file(filepath, metadata_ref_mutable)
+
+    # These are Core Foundation objects that need to be released
+    del metadata_ref
+    del metadata_ref_mutable
+
+    return metadata
 
 
 if __name__ == "__main__":

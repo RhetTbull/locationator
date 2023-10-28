@@ -1,3 +1,11 @@
+"""supported filetype data for exiftool"""
+
+import json
+
+# exiftool supported file types, created by osxphotos/utils/exiftool_supported_types.py
+# in https://github.com/RhetTbull/osxphotos
+
+exiftool_filetypes_json = """
 {
     "360": {
         "extension": "360",
@@ -2537,7 +2545,7 @@
             "MACOS"
         ],
         "support": "R",
-        "description": "MacOS \"._\" sidecar file (may have any extension)",
+        "description": "MacOS '._' sidecar file (may have any extension)",
         "exif": null,
         "iptc": null,
         "xmp": null,
@@ -5072,3 +5080,6 @@
         "create": false
     }
 }
+"""
+
+EXIFTOOL_SUPPORTED_FILETYPES = json.loads(exiftool_filetypes_json)

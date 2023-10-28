@@ -138,13 +138,14 @@ def run_server(app: Locationator, port: int, timeout: int):
         ) -> tuple[bool, str]:
             """Perform reverse geocode of latitude/longitude."""
             geocode_queue = queue.Queue()
-            app.log(f"reverse_geocode: {geocode_queue=}, calling reverse_geocode")
-            app.reverse_geocode(latitude, longitude, geocode_queue)
-
+            app.log(
+                f"reverse_geocode: {geocode_queue=}, {latitude=}, {longitude=}, {timeout=}, calling reverse_geocode"
+            )
+            app.reverse_geocode_with_queue(latitude, longitude, geocode_queue)
             try:
                 success, result = geocode_queue.get(block=True, timeout=timeout)
                 geocode_queue.task_done()
-            except geocode_queue.Empty:
+            except queue.Empty:
                 success = False
                 result = "Timeout waiting for reverse geocode to complete"
             app.log(f"reverse_geocode: {success=}, {result=}")

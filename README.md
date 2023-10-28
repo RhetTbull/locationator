@@ -1,6 +1,6 @@
 # Locationator
 
-A simple macOS menubar app that provides access to the macOS Location Services reverse geocoding API. Also includes a command line tool for accessing the reverse geocoding API and for writing reverse geocoding data to the XMP metadata of image and video files.
+A simple macOS menubar app that provides access to the macOS Location Services reverse geocoding API. Also includes a command line tool for accessing the reverse geocoding API and for writing reverse geocoding data to the XMP metadata of image and video files as well as two services for accessing the reverse geocoding API from the Services menu.
 
 ## Rationale
 
@@ -126,6 +126,15 @@ Server: SimpleHTTP/0.6 Python/3.11.6
 }
 ```
 
+## Services
+
+Locationator will install two services accessible via the Services menu:
+
+- `Locationator: reverse geocode`: extracts the latitude and longitude from the selected image and performs a reverse geocode lookup. The result is copied to the clipboard.
+- `Locationator: write XMP data`: extracts the latitude and longitude from the selected image and writes the reverse geocode data to the XMP metadata of the image.
+
+>*Note*: the `Locationator: write XMP data` service does not work with RAW image.
+
 ## Command Line Tools
 
 Locationator provides a menu option to "Install Command Line tools" that will install the `locationator` CLI to `/usr/local/bin`. The CLI has 3 commands. `lookup`, `from-exif`, and `write-xmp`.  `lookup` looks up the reverse geocoding for a given latitude & longitude. `from-exif` reads the GPS coordinates from a file using [exiftool](https://exiftool.org) and prints out the reverse geocoding data in JSON format. `write-xmp` reads the GPS coordinates from the file and writes the following fields to the XMP metadata of the file using exiftool:
@@ -138,16 +147,20 @@ Locationator provides a menu option to "Install Command Line tools" that will in
 
 exiftool must be installed to use `from-exif` or `write-xmp`.
 
->*Note*: Currently, installing the CLI requires that your user account have permissions to write to `/usr/local/bin`.  This means installation is likely to fail if running from a non-admin account. If you are running from a non-admin account, you can install the CLI by copying the `locationator` binary from the `/Applications/Locationator.app/Contents/Resources` directory of the app bundle to a directory in your path.
+The installation dialog will copy the required installation commands to the clipboard and prompt you to paste and run the commands in the terminal. You may be prompted for your admin password to complete the installation.
 
-The following commands can be run in the terminal to install the CLI:
+The following commands can be also run in the terminal to install the CLI:
 
 ```bash
 [ ! -d "/usr/local/bin" ] && sudo mkdir -p /usr/local/bin
 sudo ln -s /Applications/Locationator.app/Contents/Resources/locationator /usr/local/bin/locationator
 ```
 
-A more robust installation process is planned for a future release.
+To remove the CLI, run the following commands in the terminal:
+
+```bash
+sudo rm /usr/local/bin/locationator
+```
 
 CLI Usage:
 
@@ -164,6 +177,8 @@ Commands:
   lookup     Lookup the reverse geolocation for a lat/lon pair.
   write-xmp  Lookup the reverse geolocation for an image/video file using...
 ```
+
+>*Note*: The CLI is a standalone binary created with [pyinstaller](https://pyinstaller.org/en/stable/) and the start-up time may be slow depending on your computer due to the way pyinstaller bundles the python interpreter and all dependencies into a single binary.
 
 ## Notes
 

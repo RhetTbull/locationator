@@ -10,7 +10,7 @@ import pathlib
 from setuptools import setup
 
 # The version number; do not change this manually! It is updated by bumpversion (https://github.com/c4urself/bump2version)
-__version__ = "0.0.6"
+__version__ = "0.0.7"
 
 # The file that contains the main application
 APP = ["locationator/locationator.py"]
@@ -23,15 +23,14 @@ if not pathlib.Path("dist/locationator").exists():
 # Include additional python modules here; probably not the best way to do this
 # but I couldn't figure out how else to get py2app to include modules in the locationator/ folder
 DATA_FILES = [
-    "locationator/icon_white.png",
-    "locationator/icon_black.png",
-    "locationator/loginitems.py",
-    "locationator/utils.py",
-    "locationator/server.py",
-    "locationator/copyfile.py",
-    "locationator/exiftool_filetypes.json",
-    "locationator/exiftool.py",
     "dist/locationator",  # include CLI in app bundle
+    "locationator/copyfile.py",
+    "locationator/icon_black.png",
+    "locationator/icon_white.png",
+    "locationator/image_metadata.py",
+    "locationator/loginitems.py",
+    "locationator/server.py",
+    "locationator/utils.py",
 ]
 
 # These values will be included by py2app into the Info.plist file in the App bundle
@@ -48,21 +47,26 @@ PLIST = {
     "NSAppleEventsUsageDescription": "Locationator needs permission to send AppleScript events to add itself to Login Items.",
     # NSLocationWhenInUseUsageDescription is the message that appears when the app asks for permission to use location services
     "NSLocationWhenInUseUsageDescription": "Locationator needs access to your location to detect your current location and to perform reverse geocoding.",
-    # NSSystemAdministrationUsageDescription is the message that tells the user why the app is requesting to manipulate the system configuration.
-    # "NSSystemAdministrationUsageDescription": "Locationator needs permission to install the command-line tools.",
     # NSServices is a list of services that the app provides that will appear in the Services menu
     # For more information on NSServices, see: https://developer.apple.com/documentation/bundleresources/information_property_list/nsservices?language=objc
-    # "NSServices": [
-    #     {
-    #         "NSMenuItem": {"default": "Detect text with Locationator"},
-    #         "NSMessage": "detectTextInImage",
-    #         "NSPortName": "Locationator",
-    #         "NSUserData": "detectTextInImage",
-    #         "NSRequiredContext": {"NSTextContent": "FilePath"},
-    #         "NSSendTypes": ["NSPasteboardTypeURL"],
-    #         "NSSendFileTypes": ["public.image"],
-    #     },
-    # ],
+    "NSServices": [
+        {
+            "NSMenuItem": {"default": "Locationator: reverse geocode"},
+            "NSMessage": "getReverseGeocoding",
+            "NSUserData": "getReverseGeocoding",
+            "NSRequiredContext": {"NSTextContent": "FilePath"},
+            "NSSendTypes": ["NSPasteboardTypeURL"],
+            "NSSendFileTypes": ["public.image"],
+        },
+        {
+            "NSMenuItem": {"default": "Locationator: write XMP data"},
+            "NSMessage": "writeReverseGeocodingToXMP",
+            "NSUserData": "writeReverseGeocodingToXMP",
+            "NSRequiredContext": {"NSTextContent": "FilePath"},
+            "NSSendTypes": ["NSPasteboardTypeURL"],
+            "NSSendFileTypes": ["public.image"],
+        },
+    ],
 }
 
 # Options for py2app
