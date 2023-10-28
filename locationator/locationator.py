@@ -228,7 +228,7 @@ class Locationator(rumps.App):
                     placemark_dict = placemark_to_dict(placemark)
                     rumps.alert(
                         title="Reverse Geocode Result",
-                        message=json.dumps(placemark_dict, indent=None),
+                        message=format_result_dict(placemark_dict),
                         ok="OK",
                     )
 

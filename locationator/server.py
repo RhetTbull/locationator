@@ -64,27 +64,6 @@ def run_server(app: Locationator, port: int, timeout: int):
             else:
                 self.send_not_found(self.path)
 
-        def do_PUT(self):
-            if self.path == "/reverse_geocode":
-                content_length = int(self.headers["Content-Length"])
-                body = json.loads(self.rfile.read(content_length))
-                app.log(f"do_PUT: {body=}")
-                if "latitude" in body and "longitude" in body:
-                    if not validate_latitude(body["latitude"]):
-                        self.send_bad_request("Invalid latitude")
-                        return
-                    if not validate_longitude(body["longitude"]):
-                        self.send_bad_request("Invalid longitude")
-                        return
-                    success, result = self.handle_reverse_geocode_put(body)
-                    app.log(f"do_PUT: {success=}, {result=}")
-                    if success:
-                        self.send_success(result)
-                    else:
-                        self.send_server_error(result)
-                else:
-                    self.send_bad_request("Missing latitude or longitude in body")
-
         def send_bad_request(self, error_str: str):
             """Send bad request response"""
             self._send_response(400, "text/plain", "Bad request: " + error_str)
