@@ -1,4 +1,4 @@
-"""Simple MacOS menu bar / status bar app that provides access to reverse geocoding via Location Services. """
+"""Simple MacOS menu bar / status bar app that provides access to reverse geocoding via Location Services."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ import queue
 import shlex
 import threading
 import time
+from collections import namedtuple
 from typing import Any
 
 import objc
@@ -28,6 +29,7 @@ from CoreLocation import (
     kCLAuthorizationStatusDenied,
     kCLAuthorizationStatusNotDetermined,
     kCLAuthorizationStatusRestricted,
+    kCLLocationAccuracyBest,
 )
 from Foundation import (
     NSURL,
@@ -82,7 +84,10 @@ AUTH_STATUS = {
 }
 
 # how long to wait in seconds for reverse geocode to complete
-LOCATION_TIMEOUT = 15
+REVERSE_GEOCODE_TIMEOUT = 15
+
+# how long to wait for a location request to complete
+LOCATION_REQUEST_TIMEOUT = 3.0
 
 # titles for install/remove menu
 INSTALL_TOOLS_TITLE = "Install command line tool"
@@ -91,9 +96,19 @@ REMOVE_TOOLS_TITLE = "Remove command line tool"
 CLI_NAME = "locationator"
 TOOLS_INSTALL_PATH = "/usr/local/bin"
 
+LocationResult = namedtuple(
+    "LocationResult", ["location", "datetime", "error"], defaults=[None, None, None]
+)
+
 
 class ReverseGeocodeError(Exception):
     """Error raised when reverse geocode fails"""
+
+    pass
+
+
+class LocationRequestError(Exception):
+    """Error raised when location request fails"""
 
     pass
 
@@ -126,8 +141,14 @@ class Locationator(rumps.App):
 
         # the log method uses NSLog to log to the unified log
         self.log("started")
+        self.menu_auth_status = rumps.MenuItem(
+            "Check Location Services authorization status", callback=self.on_auth_status
+        )
         self.menu_reverse_geocode = rumps.MenuItem(
             "Reverse geocode...", callback=self.on_reverse_geocode
+        )
+        self.menu_current_location = rumps.MenuItem(
+            "Current location", callback=self.on_current_location
         )
         self.menu_about = rumps.MenuItem(f"About {APP_NAME}", callback=self.on_about)
         self.menu_quit = rumps.MenuItem(f"Quit {APP_NAME}", callback=self.on_quit)
@@ -139,11 +160,12 @@ class Locationator(rumps.App):
         )
 
         self.menu = [
-            # self.menu_auth_status,
             self.menu_reverse_geocode,
+            self.menu_current_location,
             None,
             self.menu_start_on_login,
             self.menu_install_tools,
+            self.menu_auth_status,
             self.menu_about,
             self.menu_quit,
         ]
@@ -153,11 +175,15 @@ class Locationator(rumps.App):
 
         # initialize Location Services
         self.location_manager = CLLocationManager.alloc().init()
+        self.location_manager.setDesiredAccuracy_(kCLLocationAccuracyBest)
         self.location_manager.setDelegate_(self)
 
+        # will hold last location and datetime of request
+        self._location = LocationResult()
+        self._location_request_in_progress = False
+
         # authorize Location Services if needed
-        # TODO: doesn't appear to be needed for using reverse geocode
-        # self.authorize()
+        self.authorize()
 
         # start the HTTP server
         self.start_server()
@@ -180,9 +206,17 @@ class Locationator(rumps.App):
         """Display dialog with authorization status"""
         status = self.location_manager.authorizationStatus()
         status_str = AUTH_STATUS.get(status, "Unknown")
+        enable_str = ""
+        if status not in (
+            kCLAuthorizationStatusAuthorized,
+            kCLAuthorizationStatusAuthorizedAlways,
+        ):
+            enable_str = f"\n\nTo enable Location Services, go to "
+            "System Preferences > Security & Privacy > Privacy > Location Services"
+            "and check the box next to {APP_NAME}."
         rumps.alert(
             title=f"Authorization status",
-            message=f"{APP_NAME} {__version__} authorization status: {status_str} ({status})",
+            message=f"{APP_NAME} {__version__}\nauthorization status: {status_str} ({status}){enable_str}",
             ok="OK",
         )
 
@@ -195,7 +229,7 @@ class Locationator(rumps.App):
         # Run the server in a separate thread
         self.log("start_server")
         self.server_thread = threading.Thread(
-            target=run_server, args=[self, self.port, LOCATION_TIMEOUT]
+            target=run_server, args=[self, self.port, REVERSE_GEOCODE_TIMEOUT]
         )
         self.server_thread.start()
         self.log(f"start_server done: {self.server_thread}")
@@ -249,6 +283,26 @@ class Locationator(rumps.App):
             geocoder.reverseGeocodeLocation_completionHandler_(
                 location, _geocode_completion_handler
             )
+
+    def on_current_location(self, sender):
+        """Request current location from Location Services"""
+        self._location = LocationResult()
+        self.requestLocation()
+        start_t = time.time()
+        while self._location_request_in_progress:
+            # wait for request to finish
+            # use NSRunLoop to allow other events to be processed
+            # I tried this with using a threading.Event()
+            # as in the server but it blocked the run loop
+            NSRunLoop.currentRunLoop().runUntilDate_(
+                NSDate.dateWithTimeIntervalSinceNow_(0.05)
+            )
+            if time.time() - start_t > LOCATION_REQUEST_TIMEOUT:
+                self.log("timeout waiting for current location")
+                raise LocationRequestError("Timeout waiting for location request")
+        if self._location.error or not self._location.location:
+            raise LocationRequestError(f"Error getting location: {self._location}")
+        self.log(f"on_current_location: {self._location}")
 
     def on_install_remove_tools(self, sender):
         """Install or remove the command line tools"""
@@ -434,7 +488,7 @@ class Locationator(rumps.App):
                 NSRunLoop.currentRunLoop().runUntilDate_(
                     NSDate.dateWithTimeIntervalSinceNow_(0.05)
                 )
-                if time.time() - start_t > LOCATION_TIMEOUT:
+                if time.time() - start_t > REVERSE_GEOCODE_TIMEOUT:
                     self.log("timeout waiting for reverse geocode")
                     raise ReverseGeocodeError("Timeout waiting for reverse geocode")
 
@@ -597,6 +651,38 @@ class Locationator(rumps.App):
         if encoding:
             open_kwargs["encoding"] = encoding
         return open(*open_args, **open_kwargs)
+
+    def startUpdatingLocation(self):
+        """Start location update"""
+        self.log(f"startUpdatingLocation: {self.location_manager}")
+        self.location_manager.startUpdatingLocation()
+
+    def stopUpdatingLocation(self):
+        """Stop location update"""
+        self.log(f"stopUpdatingLocation: {self.location_manager}")
+        self.location_manager.stopUpdatingLocation()
+
+    def requestLocation(self):
+        """Request current location"""
+        self.log(f"requestLocation: {self.location_manager}")
+        if self._location_request_in_progress:
+            # updated in locationManager_didUpdateLocations_
+            return
+        self.location_manager.requestLocation()
+
+    def locationManager_didUpdateLocations_(
+        self, manager: CLLocationManager, locations: list[CLLocation]
+    ):
+        """Called when location is updated"""
+        self.log(f"didUpdateLocations: {manager} {locations}")
+        self._location = LocationResult(locations, datetime.datetime.now(), None)
+        self._location_request_in_progress = False
+
+    def locationManager_didFailWithError_(self, manager: CLLocationManager, error: Any):
+        """Handle errors from CLLocationManager"""
+        self.log(f"locationManager_didFailWithError_: {manager} {error}")
+        self._location_request_in_progress = False
+        self._location = LocationResult(None, None, error)
 
 
 def placemark_to_dict(placemark: CLPlacemark) -> dict:

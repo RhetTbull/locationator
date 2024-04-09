@@ -6,7 +6,6 @@
     If these aren't important to you, I recommend you consider Sven Marnach's excellent 
     pyexiftool: https://github.com/smarnach/pyexiftool which provides more functionality """
 
-
 from __future__ import annotations
 
 import atexit
