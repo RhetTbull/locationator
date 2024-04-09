@@ -286,22 +286,7 @@ class Locationator(rumps.App):
 
     def on_current_location(self, sender):
         """Request current location from Location Services"""
-        self._location = LocationResult()
-        self.requestLocation()
-        start_t = time.time()
-        while self._location_request_in_progress:
-            # wait for request to finish
-            # use NSRunLoop to allow other events to be processed
-            # I tried this with using a threading.Event()
-            # as in the server but it blocked the run loop
-            NSRunLoop.currentRunLoop().runUntilDate_(
-                NSDate.dateWithTimeIntervalSinceNow_(0.05)
-            )
-            if time.time() - start_t > LOCATION_REQUEST_TIMEOUT:
-                self.log("timeout waiting for current location")
-                raise LocationRequestError("Timeout waiting for location request")
-        if self._location.error or not self._location.location:
-            raise LocationRequestError(f"Error getting location: {self._location}")
+        self.update_current_location()
         self.log(f"on_current_location: {self._location}")
 
     def on_install_remove_tools(self, sender):
@@ -537,6 +522,42 @@ class Locationator(rumps.App):
             )
             self.log(f"reverse_geocode done: {geocode_queue=}")
 
+    def update_current_location(self):
+        """Request the current location and set self._location"""
+        self.log("current_location: starting request")
+        self.requestLocation()
+        start_t = time.time()
+        while self._location_request_in_progress:
+            # wait for request to finish
+            # use NSRunLoop to allow other events to be processed
+            # I tried this with using a threading.Event()
+            # as in the server but it blocked the run loop
+            NSRunLoop.currentRunLoop().runUntilDate_(
+                NSDate.dateWithTimeIntervalSinceNow_(0.05)
+            )
+            if time.time() - start_t > LOCATION_REQUEST_TIMEOUT:
+                self.log("timeout waiting for current location")
+                raise LocationRequestError("Timeout waiting for location request")
+        if self._location.error or not self._location.location:
+            raise LocationRequestError(f"Error getting location: {self._location}")
+        self.log(f"current_location: {self._location}")
+
+    def current_location_with_queue(self, location_queue: queue.Queue):
+        """Perform current location lookup; return result via queue"""
+        self.log(f"current_location:")
+        with objc.autorelease_pool():
+
+            try:
+                self.update_current_location()
+            except LocationRequestError as e:
+                error_str = str(e)
+            else:
+                error_str = self._location.error
+            location_dict = {}
+            location_dict["error"] = error_str
+            location_queue.put((False, json.dumps(location_dict)))
+            self.log(f"current_location_with_queue done: {location_queue=}")
+
     def log(self, msg: str):
         """Log a message to unified log."""
         NSLog(f"{APP_NAME} {__version__} {msg}")
@@ -668,6 +689,7 @@ class Locationator(rumps.App):
         if self._location_request_in_progress:
             # updated in locationManager_didUpdateLocations_
             return
+        self._location = LocationResult()
         self.location_manager.requestLocation()
 
     def locationManager_didUpdateLocations_(

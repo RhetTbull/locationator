@@ -56,7 +56,14 @@ def run_server(app: Locationator, port: int, timeout: int):
                 success, result = self.reverse_geocode(
                     float(query_dict["latitude"]), float(query_dict["longitude"])
                 )
-                app.log(f"do_PUT: {success=}, {result=}")
+                app.log(f"do_GET: {success=}, {result=}")
+                if success:
+                    self.send_success(result)
+                else:
+                    self.send_server_error(result)
+            elif self.path.split("?")[0] == "/current_location":
+                success, result = self.current_location()
+                app.log(f"do_GET: {success=}, {result=}")
                 if success:
                     self.send_success(result)
                 else:
@@ -128,6 +135,22 @@ def run_server(app: Locationator, port: int, timeout: int):
                 success = False
                 result = "Timeout waiting for reverse geocode to complete"
             app.log(f"reverse_geocode: {success=}, {result=}")
+            return success, result
+
+        def current_location(self) -> tuple[bool, str]:
+            """Perform lookup of current location."""
+            location_queue = queue.Queue()
+            app.log(
+                f"current_location: {location_queue=}, {timeout=}, calling current_location"
+            )
+            app.current_location_with_queue(location_queue)
+            try:
+                success, result = location_queue.get(block=True, timeout=timeout)
+                location_queue.task_done()
+            except queue.Empty:
+                success = False
+                result = "Timeout waiting for location lookup to complete"
+            app.log(f"current_location: {success=}, {result=}")
             return success, result
 
     http.server.ThreadingHTTPServer.allow_reuse_address = True
