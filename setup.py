@@ -10,7 +10,7 @@ import pathlib
 from setuptools import setup
 
 # The version number; do not change this manually! It is updated by bumpversion (https://github.com/c4urself/bump2version)
-__version__ = "0.1.1"
+__version__ = "0.2.0"
 
 # The file that contains the main application
 APP = ["locationator/locationator.py"]
