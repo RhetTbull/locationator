@@ -18,12 +18,16 @@ from typing import Any
 import objc
 import rumps
 from AppKit import NSApplication, NSPasteboardTypeFileURL
-from Contacts import CNPostalAddress, CNPostalAddressStreetKey
+from clutils import (
+    Location_from_CLLocation,
+    format_result_dict,
+    placemark_to_dict,
+    postal_address_to_dict,
+)
 from CoreLocation import (
     CLGeocoder,
     CLLocation,
     CLLocationManager,
-    CLPlacemark,
     kCLAuthorizationStatusAuthorized,
     kCLAuthorizationStatusAuthorizedAlways,
     kCLAuthorizationStatusDenied,
@@ -41,24 +45,17 @@ from Foundation import (
     NSString,
     NSUTF8StringEncoding,
 )
-from image_metadata import (
-    load_image_location,
-    load_image_metadata_ref,
-    metadata_ref_create_mutable,
-    metadata_ref_set_tag,
-    metadata_ref_write_to_file,
-)
-from location import Location_from_CLLocation
 from loginitems import add_login_item, list_login_items, remove_login_item
 from pasteboard import Pasteboard
 from server import run_server
 from utils import (
-    flatten_dict,
     get_app_path,
+    get_lat_long_from_string,
     str_or_none,
     validate_latitude,
     validate_longitude,
 )
+from xmp import write_xmp_metadata
 
 # do not manually change the version; use bump2version per the README
 __version__ = "0.1.1"
@@ -759,113 +756,6 @@ class Locationator(rumps.App):
         self.stopUpdatingLocation()
 
 
-def placemark_to_dict(placemark: CLPlacemark) -> dict:
-    """Convert a CLPlacemark to a dict
-
-    Args:
-        placemark: CLPlacemark object to convert
-
-    Returns: dict containing the placemark data
-    """
-    coordinate = placemark.location().coordinate()
-    timezone = placemark.timeZone()
-    postalAddress = postal_address_to_dict(placemark.postalAddress())
-
-    areasOfInterest = []
-    if placemark.areasOfInterest():
-        for i in range(placemark.areasOfInterest().count()):
-            areasOfInterest.append(
-                str_or_none(placemark.areasOfInterest().objectAtIndex_(i))
-            )
-
-    placemark_dict = {
-        "location": (
-            coordinate.latitude,
-            coordinate.longitude,
-        ),
-        "name": str_or_none(placemark.name()),
-        "thoroughfare": str_or_none(placemark.thoroughfare()),
-        "subThoroughfare": str_or_none(placemark.subThoroughfare()),
-        "locality": str_or_none(placemark.locality()),
-        "subLocality": str_or_none(placemark.subLocality()),
-        "administrativeArea": str_or_none(placemark.administrativeArea()),
-        "subAdministrativeArea": str_or_none(placemark.subAdministrativeArea()),
-        "postalCode": str_or_none(placemark.postalCode()),
-        "ISOcountryCode": str_or_none(placemark.ISOcountryCode()),
-        "country": str_or_none(placemark.country()),
-        "postalAddress": postalAddress,
-        "inlandWater": str_or_none(placemark.inlandWater()),
-        "ocean": str_or_none(placemark.ocean()),
-        "areasOfInterest": areasOfInterest,
-        "timeZoneName": str_or_none(timezone.name()),
-        "timeZoneAbbreviation": str_or_none(timezone.abbreviation()),
-        "timeZoneSecondsFromGMT": int(timezone.secondsFromGMT()),
-    }
-
-    return placemark_dict
-
-
-def postal_address_to_dict(postalAddress: CNPostalAddress) -> dict:
-    """Convert a CNPostalAddress to a dict
-
-    Args:
-        postalAddress: CNPostalAddress object to convert
-
-    Returns: dict containing the postalAddress data
-    """
-    if not postalAddress:
-        return {
-            "street": "",
-            "city": "",
-            "state": "",
-            "country": "",
-            "postalCode": "",
-            "ISOCountryCode": "",
-            "subAdministrativeArea": "",
-            "subLocality": "",
-        }
-
-    postalAddress_dict = {
-        "street": str_or_none(postalAddress.street()),
-        "city": str_or_none(postalAddress.city()),
-        "state": str_or_none(postalAddress.state()),
-        "country": str_or_none(postalAddress.country()),
-        "postalCode": str_or_none(postalAddress.postalCode()),
-        "ISOCountryCode": str_or_none(postalAddress.ISOCountryCode()),
-        "subAdministrativeArea": str_or_none(postalAddress.subAdministrativeArea()),
-        "subLocality": str_or_none(postalAddress.subLocality()),
-    }
-
-    return postalAddress_dict
-
-
-def get_lat_long_from_string(s: str) -> tuple[float, float]:
-    """Get latitude and longitude from a string
-
-    Args:
-        s: string with values which may be separated by comma or space
-
-    Returns: tuple of latitude and longitude as floats
-
-    Raises:
-        ValueError: if latitude or longitude is invalid or cannot be parsed
-    """
-    try:
-        lat, lng = s.split(",")
-    except ValueError:
-        try:
-            lat, lng = s.split(" ")
-        except ValueError:
-            raise ValueError(f"Could not parse latitude/longitude from string: {s}")
-    lat = lat.strip()
-    lng = lng.strip()
-    if not validate_latitude(lat):
-        raise ValueError(f"Invalid latitude: {lat}")
-    if not validate_longitude(lng):
-        raise ValueError(f"Invalid longitude: {lng}")
-    return lat, lng
-
-
 def serviceSelector(fn):
     """Decorator to convert a method to a selector to handle an NSServices message."""
     return objc.selector(fn, signature=b"v@:@@o^@")
@@ -1008,54 +898,6 @@ class ServiceProvider(NSObject):
                 return ErrorValue(e)
 
         return None
-
-
-def format_result_dict(d: dict) -> str:
-    """Format a reverse geocode result dict for display"""
-    result_dict = flatten_dict(d)
-    for key, value in result_dict.items():
-        if isinstance(value, (list, tuple)):
-            result_dict[key] = ", ".join(str(v) for v in value)
-    return "\n".join(f"{key}: {value}" for key, value in result_dict.items())
-
-
-def write_xmp_metadata(filepath: str, results: dict[str, Any]) -> dict[str, Any]:
-    """Write reverse geolocation-related fields to file metadata
-
-    Args:
-        filename (str): Path to file
-        results (dict): Reverse geocode results
-
-    Note: The following XMP fields are written (parentheses indicate the corresponding
-    reverse geocode result field):
-
-    - XMP:CountryCode / Iptc4xmpCore:CountryCode (ISOcountryCode)
-    - XMP:Country / photoshop:Country (country)
-    - XMP:State / photoshop:State (administrativeArea)
-    - XMP:City / photoshop:City (locality)
-    - XMP:Location / Iptc4xmpCore:Location (name)
-    """
-
-    metadata = {
-        "Iptc4xmpCore:CountryCode": results["ISOcountryCode"],
-        "photoshop:Country": results["country"],
-        "photoshop:State": results["administrativeArea"],
-        "photoshop:City": results["locality"],
-        "Iptc4xmpCore:Location": results["name"],
-    }
-
-    metadata_ref = load_image_metadata_ref(filepath)
-    metadata_ref_mutable = metadata_ref_create_mutable(metadata_ref)
-    for key, value in metadata.items():
-        metadata_ref_mutable = metadata_ref_set_tag(metadata_ref_mutable, key, value)
-
-    metadata_ref_write_to_file(filepath, metadata_ref_mutable)
-
-    # These are Core Foundation objects that need to be released
-    del metadata_ref
-    del metadata_ref_mutable
-
-    return metadata
 
 
 if __name__ == "__main__":

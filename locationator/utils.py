@@ -100,3 +100,30 @@ def flatten_dict(d: dict) -> dict:
 
     items = [item for k, v in d.items() for item in expand(k, v)]
     return dict(items)
+
+
+def get_lat_long_from_string(s: str) -> tuple[float, float]:
+    """Get latitude and longitude from a string
+
+    Args:
+        s: string with values which may be separated by comma or space
+
+    Returns: tuple of latitude and longitude as floats
+
+    Raises:
+        ValueError: if latitude or longitude is invalid or cannot be parsed
+    """
+    try:
+        lat, lng = s.split(",")
+    except ValueError:
+        try:
+            lat, lng = s.split(" ")
+        except ValueError:
+            raise ValueError(f"Could not parse latitude/longitude from string: {s}")
+    lat = lat.strip()
+    lng = lng.strip()
+    if not validate_latitude(lat):
+        raise ValueError(f"Invalid latitude: {lat}")
+    if not validate_longitude(lng):
+        raise ValueError(f"Invalid longitude: {lng}")
+    return lat, lng
