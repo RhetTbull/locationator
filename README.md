@@ -29,7 +29,7 @@ Alternatively, to build from source:
 
 ## Usage
 
-Locationator server is a very simple HTTP server for handling local requests. It supports two endpoints, `GET /` and `GET /reverse_geocode`.
+Locationator server is a very simple HTTP server for handling local requests. It supports three endpoints, `GET /`, `GET /reverse_geocode`, and `GET /current_location`.
 
 >*Please note*, this server is for local use and NOT intended to be exposed to the internet. The server does not support any authentication or authorization and is intended to be used on a local machine only.
 
@@ -76,6 +76,8 @@ Receive geocode queries from the client. This endpoint accepts GET requests with
 |---|---|---|
 |`latitude`|Double|Latitude of the location to be reverse geocoded|
 |`longitude`|Double|Longitude of the location to be reverse geocoded|
+
+**Note:**: This method may take several seconds to return a response if the CoreLocation service is unable to reverse geocode the location quickly. It will timeout after 15 seconds and return an error if a location cannot be determined.
 
 **Response format** :
 
@@ -129,6 +131,52 @@ Server: SimpleHTTP/0.6 Python/3.11.6
     "timeZoneAbbreviation": "PDT",
     "timeZoneName": "America/Los_Angeles",
     "timeZoneSecondsFromGMT": -25200
+}
+```
+
+### GET /current_location
+
+Retrieve the current location of the server. This endpoint accepts GET requests and returns the current location of the server.
+
+**URL** : `/current_location`
+
+**Method** : `GET`
+
+**Query Parameters** :
+
+None
+
+**Note:**: This method may take several seconds to return a response if the CoreLocation service is unable to determine the location quickly. It will timeout after 10 seconds and return an error if a location cannot be determined.
+
+**Response format** :
+
+- On Success, Content-type is application/json and a response code of 200 with a JSON object containing the location result is returned
+- On Failure, a description of the error is returned with a suitable HTTP response code
+
+**Success Response Example**:
+
+`http GET "http://localhost:8000/current_location"`
+
+or
+
+`curl -X GET "http://localhost:8000/current_location"`
+
+```http
+HTTP/1.0 200 OK
+Content-type: application/json;charset=UTF-8
+Date: Fri, 12 Apr 2024 15:38:49 GMT
+Server: SimpleHTTP/0.6 Python/3.11.7
+
+{
+    "altitude": 0.0,
+    "course": -1.0,
+    "error": null,
+    "horizontal_accuracy": 35.0,
+    "latitude": 38.79940398748653,
+    "longitude": -104.70084274670369,
+    "speed": -1.0,
+    "timestamp": "2024-04-12T09:38:49.372029",
+    "vertical_accuracy": -1.0
 }
 ```
 
@@ -214,5 +262,5 @@ The CLI must be built as a stand alone file with pyinstaller and the resulting `
 
 ## License
 
-Copyright (c) 2023, Rhet Turnbull  
+Copyright (c) 2023, Rhet Turnbull
 Licensed under the MIT License
