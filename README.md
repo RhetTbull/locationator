@@ -144,7 +144,23 @@ Retrieve the current location of the server. This endpoint accepts GET requests 
 
 **Query Parameters** :
 
-None
+|Parameter|Type|Description|
+|---|---|---|
+|`accuracy`|String|Desired accuracy; optional. One of "best", "navigation", "reduced", "10m", "100m", "1km", "3km"|
+
+The `accuracy` parameter is optional and can be used to specify the desired accuracy of the location. The values are as follows:
+
+|Value|Core Location Constant|Description|
+|---|---|---|
+|`best`|kCLLocationAccuracyBest|The best level of accuracy available. Specify this constant when you want very high accuracy but don’t need the same level of accuracy required for navigation apps.|
+|`navigation`|kCLLocationAccuracyBestForNavigation|The highest possible accuracy that uses additional sensor data to facilitate navigation apps.|
+|`reduced`|kCLLocationAccuracyReduced|The level of accuracy used when an app isn’t authorized for full accuracy location data.|
+|`10m`|kCLLocationAccuracyNearestTenMeters|Accuracy within 10 meters.|
+|`100m`|kCLLocationAccuracyHundredMeters|Accuracy within 100 meters.|
+|`1km`|kCLLocationAccuracyKilometer|Accuracy within 1 kilometer.|
+|`3km`|kCLLocationAccuracyThreeKilometers|Accuracy within 3 kilometers.|
+
+If the `accuracy` parameter is not provided, the default accuracy level is `best`. An invalid accuracy value will result in an error response.
 
 **Note:**: This method may take several seconds to return a response if the CoreLocation service is unable to determine the location quickly. It will timeout after 10 seconds and return an error if a location cannot be determined.
 
@@ -177,6 +193,29 @@ Server: SimpleHTTP/0.6 Python/3.11.7
     "speed": -1.0,
     "timestamp": "2024-04-12T09:38:49.372029",
     "vertical_accuracy": -1.0
+}
+```
+
+With accuracy parameter:
+
+`http GET "http://localhost:8000/current_location?accuracy=reduced"`
+
+```http
+HTTP/1.0 200 OK
+Content-type: application/json;charset=UTF-8
+Date: Fri, 12 Apr 2024 21:26:29 GMT
+Server: SimpleHTTP/0.6 Python/3.11.7
+
+{
+"altitude": 0.0,
+"course": 0.0,
+"error": null,
+"horizontal_accuracy": 3226.1754831394483,
+"latitude": 33.60643230872112,
+"longitude": -118.38021751482945,
+"speed": 0.0,
+"timestamp": "2024-04-12T14:26:28.654163",
+"vertical_accuracy": -1.0
 }
 ```
 

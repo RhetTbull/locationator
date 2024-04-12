@@ -18,12 +18,7 @@ from typing import Any
 import objc
 import rumps
 from AppKit import NSApplication, NSPasteboardTypeFileURL
-from clutils import (
-    Location_from_CLLocation,
-    format_result_dict,
-    placemark_to_dict,
-    postal_address_to_dict,
-)
+from clutils import Location_from_CLLocation, format_result_dict, placemark_to_dict
 from CoreLocation import (
     CLGeocoder,
     CLLocation,
@@ -45,16 +40,11 @@ from Foundation import (
     NSString,
     NSUTF8StringEncoding,
 )
+from image_metadata import load_image_location
 from loginitems import add_login_item, list_login_items, remove_login_item
 from pasteboard import Pasteboard
 from server import run_server
-from utils import (
-    get_app_path,
-    get_lat_long_from_string,
-    str_or_none,
-    validate_latitude,
-    validate_longitude,
-)
+from utils import get_app_path, get_lat_long_from_string
 from xmp import write_xmp_metadata
 
 # do not manually change the version; use bump2version per the README
@@ -82,11 +72,11 @@ AUTH_STATUS = {
     kCLAuthorizationStatusRestricted: "Restricted",
 }
 
-# how long to wait in nanoseconds for reverse geocode to complete
-REVERSE_GEOCODE_TIMEOUT = 15 * 1e9
+# how long to wait in seconds for reverse geocode to complete
+REVERSE_GEOCODE_TIMEOUT = 15.0
 
-# how long to wait in nanoseconds for a location request to complete
-LOCATION_REQUEST_TIMEOUT = 10.0 * 1e9
+# how long to wait in seconds for a location request to complete
+LOCATION_REQUEST_TIMEOUT = 10.0
 
 # how long to sleep in seconds before checking if a location result is done
 WAIT_INTERVAL = 0.05
@@ -177,7 +167,6 @@ class Locationator(rumps.App):
 
         # initialize Location Services
         self.location_manager = CLLocationManager.alloc().init()
-        self.location_manager.setDesiredAccuracy_(kCLLocationAccuracyBest)
         self.location_manager.setDelegate_(self)
 
         # will hold last location and datetime of request
@@ -475,6 +464,7 @@ class Locationator(rumps.App):
             )
 
             start_t = time.monotonic_ns()
+            timeout = REVERSE_GEOCODE_TIMEOUT * 1e9  # convert to nanoseconds
             while not result.done:
                 # wait for completion handler to set result.done
                 # use NSRunLoop to allow other events to be processed
@@ -483,7 +473,7 @@ class Locationator(rumps.App):
                 NSRunLoop.currentRunLoop().runUntilDate_(
                     NSDate.dateWithTimeIntervalSinceNow_(WAIT_INTERVAL)
                 )
-                if time.monotonic_ns() - start_t > REVERSE_GEOCODE_TIMEOUT:
+                if time.monotonic_ns() - start_t > timeout:
                     self.log("timeout waiting for reverse geocode")
                     raise ReverseGeocodeError("Timeout waiting for reverse geocode")
 
@@ -532,11 +522,17 @@ class Locationator(rumps.App):
             )
             self.log(f"reverse_geocode done: {geocode_queue=}")
 
-    def update_current_location(self) -> LocationResult:
+    def update_current_location(self, accuracy: float | None = None) -> LocationResult:
         """Request the current location and set self._location"""
         self.log("update_current_location: starting request")
+        if accuracy is not None:
+            self.location_manager.setDesiredAccuracy_(accuracy)
+        else:
+            self.location_manager.setDesiredAccuracy_(kCLLocationAccuracyBest)
+        self.log(f"update_current_location: starting request, {accuracy=}")
         self.requestLocation()
         start_t = time.monotonic_ns()
+        timeout = LOCATION_REQUEST_TIMEOUT * 1e9  # convert to nanoseconds
         while self._location_request_in_progress:
             # wait for request to finish
             # use NSRunLoop to allow other events to be processed
@@ -545,7 +541,7 @@ class Locationator(rumps.App):
             NSRunLoop.currentRunLoop().runUntilDate_(
                 NSDate.dateWithTimeIntervalSinceNow_(WAIT_INTERVAL)
             )
-            if time.monotonic_ns() - start_t > LOCATION_REQUEST_TIMEOUT:
+            if time.monotonic_ns() - start_t > timeout:
                 self.log("timeout waiting for current location")
                 raise LocationRequestError("Timeout waiting for location request")
         if self._location.error or not self._location.location:
@@ -554,13 +550,15 @@ class Locationator(rumps.App):
         self.log(f"update_current_location: {self._location}")
         return self._location
 
-    def current_location_with_queue(self, location_queue: queue.Queue):
+    def current_location_with_queue(
+        self, location_queue: queue.Queue, accuracy: float | None = None
+    ):
         """Perform current location lookup; return result via queue"""
         self.log(f"current_location_with_queue: {location_queue=}")
         location = None
         with objc.autorelease_pool():
             try:
-                location = self.update_current_location()
+                location = self.update_current_location(accuracy=accuracy)
             except LocationRequestError as e:
                 self.log(f"current_location_with_queue error: {e}")
                 error_str = str(e)
@@ -578,12 +576,10 @@ class Locationator(rumps.App):
                     f"Object of type {obj.__class__.__name__} is not JSON serializable"
                 )
 
-            location_queue.put(
-                (
-                    not location_dict["error"],
-                    json.dumps(location_dict, default=_default),
-                )
-            )
+            if error := location_dict["error"]:
+                location_queue.put((False, error))
+            else:
+                location_queue.put((True, json.dumps(location_dict, default=_default)))
             self.log(
                 f"current_location_with_queue done: {location_queue=} {location_dict=}"
             )

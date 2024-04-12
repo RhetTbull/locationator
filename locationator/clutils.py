@@ -8,7 +8,17 @@ import textwrap
 from dataclasses import asdict, dataclass
 
 from Contacts import CNPostalAddress, CNPostalAddressStreetKey
-from CoreLocation import CLLocation, CLPlacemark
+from CoreLocation import (
+    CLLocation,
+    CLPlacemark,
+    kCLLocationAccuracyBest,
+    kCLLocationAccuracyBestForNavigation,
+    kCLLocationAccuracyHundredMeters,
+    kCLLocationAccuracyKilometer,
+    kCLLocationAccuracyNearestTenMeters,
+    kCLLocationAccuracyReduced,
+    kCLLocationAccuracyThreeKilometers,
+)
 from Foundation import NSDate
 from utils import flatten_dict, str_or_none
 
@@ -157,3 +167,39 @@ def format_result_dict(d: dict) -> str:
         if isinstance(value, (list, tuple)):
             result_dict[key] = ", ".join(str(v) for v in value)
     return "\n".join(f"{key}: {value}" for key, value in result_dict.items())
+
+
+def validate_accuracy(accuracy: float) -> bool:
+    """Validate a desiredAccuracy value"""
+    if accuracy not in {
+        kCLLocationAccuracyBest,
+        kCLLocationAccuracyBestForNavigation,
+        kCLLocationAccuracyHundredMeters,
+        kCLLocationAccuracyKilometer,
+        kCLLocationAccuracyNearestTenMeters,
+        kCLLocationAccuracyReduced,
+        kCLLocationAccuracyThreeKilometers,
+    }:
+        return False
+    return True
+
+
+def accuracy_from_str(accuracy: str) -> float:
+    """Return a valid kCLLocationAccuracy constant given a string value"""
+    match accuracy:
+        case "best":
+            return kCLLocationAccuracyBest
+        case "navigation":
+            return kCLLocationAccuracyBestForNavigation
+        case "100m":
+            return kCLLocationAccuracyHundredMeters
+        case "1km":
+            return kCLLocationAccuracyKilometer
+        case "10m":
+            return kCLLocationAccuracyNearestTenMeters
+        case "reduced":
+            return kCLLocationAccuracyReduced
+        case "3km":
+            return kCLLocationAccuracyThreeKilometers
+        case _:
+            raise ValueError(f"Unknown accuracy value: {accuracy}")
