@@ -1,0 +1,26 @@
+{
+  "files": [
+    "README.md"
+  ],
+  "imageSize": 100,
+  "commit": false,
+  "commitType": "docs",
+  "commitConvention": "angular",
+  "contributors": [
+    {
+      "login": "realityexpander",
+      "name": "Chris Athanas",
+      "avatar_url": "https://avatars.githubusercontent.com/u/5157474?v=4",
+      "profile": "http://realityexpander.wixsite.com/resume",
+      "contributions": [
+        "ideas"
+      ]
+    }
+  ],
+  "contributorsPerLine": 7,
+  "skipCi": true,
+  "repoType": "github",
+  "repoHost": "https://github.com",
+  "projectName": "locationator",
+  "projectOwner": "RhetTbull"
+}
