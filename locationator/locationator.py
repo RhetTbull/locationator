@@ -153,7 +153,7 @@ class Locationator(rumps.App):
             "Reverse geocode...", callback=self.on_reverse_geocode
         )
         self.menu_current_location = rumps.MenuItem(
-            "Current location", callback=self.on_current_location
+            "Current location...", callback=self.on_current_location
         )
         self.menu_about = rumps.MenuItem(f"About {APP_NAME}", callback=self.on_about)
         self.menu_quit = rumps.MenuItem(f"Quit {APP_NAME}", callback=self.on_quit)
@@ -185,6 +185,7 @@ class Locationator(rumps.App):
 
         # will hold last location and datetime of request
         self._location = LocationResult()
+        # allow only one location request to execute at a time
         self._location_request_in_progress = False
 
         # authorize Location Services if needed
@@ -291,8 +292,15 @@ class Locationator(rumps.App):
 
     def on_current_location(self, sender):
         """Request current location from Location Services"""
-        self.update_current_location()
-        self.log(f"on_current_location: {self._location}")
+        try:
+            location = self.update_current_location()
+            self.log(f"on_current_location: {location}")
+            if location.error:
+                rumps.alert(f"Error getting current location:\n{location.error}")
+            else:
+                rumps.alert(f"Current location:\n{location.location.as_str()}")
+        except LocationRequestError as e:
+            rumps.alert(f"Error getting current location:\n{e}")
 
     def on_install_remove_tools(self, sender):
         """Install or remove the command line tools"""
@@ -746,8 +754,9 @@ class Locationator(rumps.App):
     def locationManager_didFailWithError_(self, manager: CLLocationManager, error: Any):
         """Handle errors from CLLocationManager"""
         self.log(f"locationManager_didFailWithError_: {manager} {error}")
-        self._location_request_in_progress = False
         self._location = LocationResult(None, None, error)
+        self._location_request_in_progress = False
+        self.stopUpdatingLocation()
 
 
 def placemark_to_dict(placemark: CLPlacemark) -> dict:

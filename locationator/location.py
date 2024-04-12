@@ -2,6 +2,7 @@
 
 import datetime
 import json
+import textwrap
 from dataclasses import asdict, dataclass
 
 from CoreLocation import CLLocation
@@ -31,6 +32,21 @@ class Location:
             )
 
         return json.dumps(self.asdict(), default=_default)
+
+    def as_str(self) -> str:
+        """Format string represenation of location"""
+        return textwrap.dedent(
+            f"""
+            latitude: {self.latitude} degrees
+            longitude: {self.longitude} degrees
+            altitude: {self.altitude} meters
+            horizontal accuracy: {self.horizontal_accuracy} meters
+            vertical accuracy: {self.vertical_accuracy} meters
+            speed: {self.speed} meters/second
+            course: {self.course} degrees
+            timestamp: {self.timestamp}
+            """
+        )
 
 
 def Location_from_CLLocation(location: CLLocation) -> Location:
