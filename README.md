@@ -1,4 +1,7 @@
 # Locationator
+<!-- ALL-CONTRIBUTORS-BADGE:START - Do not remove or modify this section -->
+[![All Contributors](https://img.shields.io/badge/all_contributors-1-orange.svg?style=flat-square)](#contributors-)
+<!-- ALL-CONTRIBUTORS-BADGE:END -->
 
 A simple macOS menubar app that provides access to the macOS Location Services reverse geocoding API. Also includes a command line tool for accessing the reverse geocoding API and for writing reverse geocoding data to the XMP metadata of image and video files as well as two services for accessing the reverse geocoding API from the Services menu.
 
@@ -303,3 +306,25 @@ The CLI must be built as a stand alone file with pyinstaller and the resulting `
 
 Copyright (c) 2023, Rhet Turnbull
 Licensed under the MIT License
+
+## Contributors ✨
+
+Thanks goes to these wonderful people ([emoji key](https://allcontributors.org/docs/en/emoji-key)):
+
+<!-- ALL-CONTRIBUTORS-LIST:START - Do not remove or modify this section -->
+<!-- prettier-ignore-start -->
+<!-- markdownlint-disable -->
+<table>
+  <tbody>
+    <tr>
+      <td align="center" valign="top" width="14.28%"><a href="http://realityexpander.wixsite.com/resume"><img src="https://avatars.githubusercontent.com/u/5157474?v=4?s=100" width="100px;" alt="Chris Athanas"/><br /><sub><b>Chris Athanas</b></sub></a><br /><a href="#ideas-realityexpander" title="Ideas, Planning, & Feedback">🤔</a></td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- markdownlint-restore -->
+<!-- prettier-ignore-end -->
+
+<!-- ALL-CONTRIBUTORS-LIST:END -->
+
+This project follows the [all-contributors](https://github.com/all-contributors/all-contributors) specification. Contributions of any kind welcome!
