@@ -24,13 +24,18 @@ if not pathlib.Path("dist/locationator").exists():
 # but I couldn't figure out how else to get py2app to include modules in the locationator/ folder
 DATA_FILES = [
     "dist/locationator",  # include CLI in app bundle
+    "locationator/clutils.py",
     "locationator/copyfile.py",
+    "locationator/exiftool.py",
+    "locationator/exiftool_filetypes.py",
     "locationator/icon_black.png",
     "locationator/icon_white.png",
     "locationator/image_metadata.py",
     "locationator/loginitems.py",
+    "locationator/pasteboard.py",
     "locationator/server.py",
     "locationator/utils.py",
+    "locationator/xmp.py",
 ]
 
 # These values will be included by py2app into the Info.plist file in the App bundle
