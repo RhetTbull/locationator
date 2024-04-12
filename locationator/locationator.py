@@ -48,7 +48,7 @@ from utils import get_app_path, get_lat_long_from_string
 from xmp import write_xmp_metadata
 
 # do not manually change the version; use bump2version per the README
-__version__ = "0.1.1"
+__version__ = "0.2.0"
 
 APP_NAME = "Locationator"
 APP_ICON_WHITE = "icon_white.png"
