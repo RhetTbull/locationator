@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import contextlib
 import http.server
-import json
 import queue
 from typing import TYPE_CHECKING
 
+from clutils import accuracy_from_str
 from utils import validate_latitude, validate_longitude
 
 if TYPE_CHECKING:
@@ -56,7 +56,23 @@ def run_server(app: Locationator, port: int, timeout: int):
                 success, result = self.reverse_geocode(
                     float(query_dict["latitude"]), float(query_dict["longitude"])
                 )
-                app.log(f"do_PUT: {success=}, {result=}")
+                app.log(f"do_GET: {success=}, {result=}")
+                if success:
+                    self.send_success(result)
+                else:
+                    self.send_server_error(result)
+            elif self.path.split("?")[0] == "/current_location":
+                query_dict = self.get_query_args()
+                if accuracy_str := query_dict.get("accuracy"):
+                    try:
+                        accuracy = accuracy_from_str(accuracy_str)
+                    except ValueError as e:
+                        self.send_bad_request("Invalid accuracy")
+                        return
+                else:
+                    accuracy = None
+                success, result = self.current_location(accuracy=accuracy)
+                app.log(f"do_GET: {success=}, {result=}")
                 if success:
                     self.send_success(result)
                 else:
@@ -97,20 +113,20 @@ def run_server(app: Locationator, port: int, timeout: int):
             except (IndexError, ValueError):
                 return {}
 
-        def handle_reverse_geocode_put(self, body: dict) -> tuple[bool, str]:
-            """Perform reverse geocode of latitude/longitude in body."""
-            success = False
-            try:
-                latitude = float(body["latitude"])
-                longitude = float(body["longitude"])
-                success = True
-            except ValueError as e:
-                result = f"Invalid latitude/longitude: {e}"
+        # def handle_reverse_geocode_put(self, body: dict) -> tuple[bool, str]:
+        #     """Perform reverse geocode of latitude/longitude in body."""
+        #     success = False
+        #     try:
+        #         latitude = float(body["latitude"])
+        #         longitude = float(body["longitude"])
+        #         success = True
+        #     except ValueError as e:
+        #         result = f"Invalid latitude/longitude: {e}"
 
-            if not success:
-                return success, result
+        #     if not success:
+        #         return success, result
 
-            return self.reverse_geocode(latitude, longitude)
+        #     return self.reverse_geocode(latitude, longitude)
 
         def reverse_geocode(
             self, latitude: float, longitude: float
@@ -128,6 +144,22 @@ def run_server(app: Locationator, port: int, timeout: int):
                 success = False
                 result = "Timeout waiting for reverse geocode to complete"
             app.log(f"reverse_geocode: {success=}, {result=}")
+            return success, result
+
+        def current_location(self, accuracy: float | None) -> tuple[bool, str]:
+            """Perform lookup of current location."""
+            location_queue = queue.Queue()
+            app.log(
+                f"current_location: {location_queue=}, {timeout=}, {accuracy=}, calling current_location"
+            )
+            app.current_location_with_queue(location_queue, accuracy=accuracy)
+            try:
+                success, result = location_queue.get(block=True, timeout=timeout)
+                location_queue.task_done()
+            except queue.Empty:
+                success = False
+                result = "Timeout waiting for location lookup to complete"
+            app.log(f"current_location: {success=}, {result=}")
             return success, result
 
     http.server.ThreadingHTTPServer.allow_reuse_address = True

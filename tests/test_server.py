@@ -1,5 +1,8 @@
 """Test Locationator server"""
 
+import subprocess
+import time
+
 import httpx
 import pytest
 
@@ -36,6 +39,16 @@ REVERSE_GEOCODE = {
     "timeZoneAbbreviation": "PDT",
     "timeZoneSecondsFromGMT": -25200,
 }
+
+
+@pytest.fixture(scope="function")
+def wifi_off():
+    """test fixture that turns off wifi at start of test and back on at end of test"""
+    subprocess.run(["networksetup", "-setairportpower", "en0", "off"])
+    time.sleep(10)
+    yield
+    subprocess.run(["networksetup", "-setairportpower", "en0", "on"])
+    time.sleep(15)  # takes longer to turn back on that to turn off
 
 
 def test_get_root(port):
@@ -102,3 +115,53 @@ def test_get_reverse_geocode_valid(port):
         )
         assert response.status_code == 200
         assert response.json() == REVERSE_GEOCODE
+
+
+def test_get_reverse_geocode_server_error(port, wifi_off):
+    """Test GET /reverse_geocode with error (no network, assumes network is via WiFi"""
+    with httpx.Client() as client:
+        response = client.get(
+            f"http://localhost:{port}/reverse_geocode?latitude={LATITUDE}&longitude={LONGITUDE}"
+        )
+        assert response.status_code == 500
+        assert "Error" in response.text
+
+
+def test_get_current_location_no_accuracy(port):
+    """Test GET /current_location"""
+    with httpx.Client() as client:
+        response = client.get(f"http://localhost:{port}/current_location")
+        assert response.status_code == 200
+        assert response.json().get("latitude") is not None
+        assert response.json().get("longitude") is not None
+        assert response.json().get("error") is None
+
+
+def test_get_current_location_with_accuracy(port):
+    """Test GET /current_location?accuracy=reduced"""
+    with httpx.Client() as client:
+        response = client.get(
+            f"http://localhost:{port}/current_location?accuracy=reduced"
+        )
+        assert response.status_code == 200
+        assert response.json().get("latitude") is not None
+        assert response.json().get("longitude") is not None
+        assert response.json().get("error") is None
+
+
+def test_get_current_location_invalid_accuracy(port):
+    """Test GET /current_location?accuracy=invalid"""
+    with httpx.Client() as client:
+        response = client.get(
+            f"http://localhost:{port}/current_location?accuracy=invalid"
+        )
+        assert response.status_code == 400
+        assert "Invalid accuracy" in response.text
+
+
+def test_get_current_location_server_error(port, wifi_off):
+    """Test GET /current_location with error (no network, assumes network is via WiFi"""
+    with httpx.Client() as client:
+        response = client.get(f"http://localhost:{port}/current_location?timeout=0")
+        assert response.status_code == 500
+        assert "Error" in response.text

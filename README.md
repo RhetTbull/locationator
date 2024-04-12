@@ -29,7 +29,7 @@ Alternatively, to build from source:
 
 ## Usage
 
-Locationator server is a very simple HTTP server for handling local requests. It supports two endpoints, `GET /` and `GET /reverse_geocode`.
+Locationator server is a very simple HTTP server for handling local requests. It supports three endpoints, `GET /`, `GET /reverse_geocode`, and `GET /current_location`.
 
 >*Please note*, this server is for local use and NOT intended to be exposed to the internet. The server does not support any authentication or authorization and is intended to be used on a local machine only.
 
@@ -76,6 +76,8 @@ Receive geocode queries from the client. This endpoint accepts GET requests with
 |---|---|---|
 |`latitude`|Double|Latitude of the location to be reverse geocoded|
 |`longitude`|Double|Longitude of the location to be reverse geocoded|
+
+**Note:**: This method may take several seconds to return a response if the CoreLocation service is unable to reverse geocode the location quickly. It will timeout after 15 seconds and return an error if a location cannot be determined.
 
 **Response format** :
 
@@ -129,6 +131,91 @@ Server: SimpleHTTP/0.6 Python/3.11.6
     "timeZoneAbbreviation": "PDT",
     "timeZoneName": "America/Los_Angeles",
     "timeZoneSecondsFromGMT": -25200
+}
+```
+
+### GET /current_location
+
+Retrieve the current location of the server. This endpoint accepts GET requests and returns the current location of the server.
+
+**URL** : `/current_location`
+
+**Method** : `GET`
+
+**Query Parameters** :
+
+|Parameter|Type|Description|
+|---|---|---|
+|`accuracy`|String|Desired accuracy; optional. One of "best", "navigation", "reduced", "10m", "100m", "1km", "3km"|
+
+The `accuracy` parameter is optional and can be used to specify the desired accuracy of the location. The values are as follows:
+
+|Value|Core Location Constant|Description|
+|---|---|---|
+|`best`|kCLLocationAccuracyBest|The best level of accuracy available. Specify this constant when you want very high accuracy but don’t need the same level of accuracy required for navigation apps.|
+|`navigation`|kCLLocationAccuracyBestForNavigation|The highest possible accuracy that uses additional sensor data to facilitate navigation apps.|
+|`reduced`|kCLLocationAccuracyReduced|The level of accuracy used when an app isn’t authorized for full accuracy location data.|
+|`10m`|kCLLocationAccuracyNearestTenMeters|Accuracy within 10 meters.|
+|`100m`|kCLLocationAccuracyHundredMeters|Accuracy within 100 meters.|
+|`1km`|kCLLocationAccuracyKilometer|Accuracy within 1 kilometer.|
+|`3km`|kCLLocationAccuracyThreeKilometers|Accuracy within 3 kilometers.|
+
+If the `accuracy` parameter is not provided, the default accuracy level is `best`. An invalid accuracy value will result in an error response.
+
+**Note:**: This method may take several seconds to return a response if the CoreLocation service is unable to determine the location quickly. It will timeout after 10 seconds and return an error if a location cannot be determined.
+
+**Response format** :
+
+- On Success, Content-type is application/json and a response code of 200 with a JSON object containing the location result is returned
+- On Failure, a description of the error is returned with a suitable HTTP response code
+
+**Success Response Example**:
+
+`http GET "http://localhost:8000/current_location"`
+
+or
+
+`curl -X GET "http://localhost:8000/current_location"`
+
+```http
+HTTP/1.0 200 OK
+Content-type: application/json;charset=UTF-8
+Date: Fri, 12 Apr 2024 15:38:49 GMT
+Server: SimpleHTTP/0.6 Python/3.11.7
+
+{
+    "altitude": 0.0,
+    "course": -1.0,
+    "error": null,
+    "horizontal_accuracy": 35.0,
+    "latitude": 38.79940398748653,
+    "longitude": -104.70084274670369,
+    "speed": -1.0,
+    "timestamp": "2024-04-12T09:38:49.372029",
+    "vertical_accuracy": -1.0
+}
+```
+
+With accuracy parameter:
+
+`http GET "http://localhost:8000/current_location?accuracy=reduced"`
+
+```http
+HTTP/1.0 200 OK
+Content-type: application/json;charset=UTF-8
+Date: Fri, 12 Apr 2024 21:26:29 GMT
+Server: SimpleHTTP/0.6 Python/3.11.7
+
+{
+"altitude": 0.0,
+"course": 0.0,
+"error": null,
+"horizontal_accuracy": 3226.1754831394483,
+"latitude": 33.60643230872112,
+"longitude": -118.38021751482945,
+"speed": 0.0,
+"timestamp": "2024-04-12T14:26:28.654163",
+"vertical_accuracy": -1.0
 }
 ```
 
@@ -214,5 +301,5 @@ The CLI must be built as a stand alone file with pyinstaller and the resulting `
 
 ## License
 
-Copyright (c) 2023, Rhet Turnbull  
+Copyright (c) 2023, Rhet Turnbull
 Licensed under the MIT License

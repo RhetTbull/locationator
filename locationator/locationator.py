@@ -1,4 +1,4 @@
-"""Simple MacOS menu bar / status bar app that provides access to reverse geocoding via Location Services. """
+"""Simple MacOS menu bar / status bar app that provides access to reverse geocoding via Location Services."""
 
 from __future__ import annotations
 
@@ -12,25 +12,27 @@ import queue
 import shlex
 import threading
 import time
+from collections import namedtuple
 from typing import Any
 
 import objc
 import rumps
 from AppKit import NSApplication, NSPasteboardTypeFileURL
-from Contacts import CNPostalAddress, CNPostalAddressStreetKey
+from clutils import Location_from_CLLocation, format_result_dict, placemark_to_dict
 from CoreLocation import (
     CLGeocoder,
     CLLocation,
     CLLocationManager,
-    CLPlacemark,
     kCLAuthorizationStatusAuthorized,
     kCLAuthorizationStatusAuthorizedAlways,
     kCLAuthorizationStatusDenied,
     kCLAuthorizationStatusNotDetermined,
     kCLAuthorizationStatusRestricted,
+    kCLLocationAccuracyBest,
 )
 from Foundation import (
     NSURL,
+    NSArray,
     NSDate,
     NSLog,
     NSObject,
@@ -38,23 +40,12 @@ from Foundation import (
     NSString,
     NSUTF8StringEncoding,
 )
-from image_metadata import (
-    load_image_location,
-    load_image_metadata_ref,
-    metadata_ref_create_mutable,
-    metadata_ref_set_tag,
-    metadata_ref_write_to_file,
-)
+from image_metadata import load_image_location
 from loginitems import add_login_item, list_login_items, remove_login_item
 from pasteboard import Pasteboard
 from server import run_server
-from utils import (
-    flatten_dict,
-    get_app_path,
-    str_or_none,
-    validate_latitude,
-    validate_longitude,
-)
+from utils import get_app_path, get_lat_long_from_string
+from xmp import write_xmp_metadata
 
 # do not manually change the version; use bump2version per the README
 __version__ = "0.1.1"
@@ -82,7 +73,13 @@ AUTH_STATUS = {
 }
 
 # how long to wait in seconds for reverse geocode to complete
-LOCATION_TIMEOUT = 15
+REVERSE_GEOCODE_TIMEOUT = 15.0
+
+# how long to wait in seconds for a location request to complete
+LOCATION_REQUEST_TIMEOUT = 10.0
+
+# how long to sleep in seconds before checking if a location result is done
+WAIT_INTERVAL = 0.05
 
 # titles for install/remove menu
 INSTALL_TOOLS_TITLE = "Install command line tool"
@@ -91,9 +88,19 @@ REMOVE_TOOLS_TITLE = "Remove command line tool"
 CLI_NAME = "locationator"
 TOOLS_INSTALL_PATH = "/usr/local/bin"
 
+LocationResult = namedtuple(
+    "LocationResult", ["location", "datetime", "error"], defaults=[None, None, None]
+)
+
 
 class ReverseGeocodeError(Exception):
     """Error raised when reverse geocode fails"""
+
+    pass
+
+
+class LocationRequestError(Exception):
+    """Error raised when location request fails"""
 
     pass
 
@@ -126,8 +133,14 @@ class Locationator(rumps.App):
 
         # the log method uses NSLog to log to the unified log
         self.log("started")
+        self.menu_auth_status = rumps.MenuItem(
+            "Check Location Services authorization status", callback=self.on_auth_status
+        )
         self.menu_reverse_geocode = rumps.MenuItem(
             "Reverse geocode...", callback=self.on_reverse_geocode
+        )
+        self.menu_current_location = rumps.MenuItem(
+            "Current location...", callback=self.on_current_location
         )
         self.menu_about = rumps.MenuItem(f"About {APP_NAME}", callback=self.on_about)
         self.menu_quit = rumps.MenuItem(f"Quit {APP_NAME}", callback=self.on_quit)
@@ -139,11 +152,12 @@ class Locationator(rumps.App):
         )
 
         self.menu = [
-            # self.menu_auth_status,
             self.menu_reverse_geocode,
+            self.menu_current_location,
             None,
             self.menu_start_on_login,
             self.menu_install_tools,
+            self.menu_auth_status,
             self.menu_about,
             self.menu_quit,
         ]
@@ -155,9 +169,13 @@ class Locationator(rumps.App):
         self.location_manager = CLLocationManager.alloc().init()
         self.location_manager.setDelegate_(self)
 
+        # will hold last location and datetime of request
+        self._location = LocationResult()
+        # allow only one location request to execute at a time
+        self._location_request_in_progress = False
+
         # authorize Location Services if needed
-        # TODO: doesn't appear to be needed for using reverse geocode
-        # self.authorize()
+        self.authorize()
 
         # start the HTTP server
         self.start_server()
@@ -180,9 +198,17 @@ class Locationator(rumps.App):
         """Display dialog with authorization status"""
         status = self.location_manager.authorizationStatus()
         status_str = AUTH_STATUS.get(status, "Unknown")
+        enable_str = ""
+        if status not in (
+            kCLAuthorizationStatusAuthorized,
+            kCLAuthorizationStatusAuthorizedAlways,
+        ):
+            enable_str = f"\n\nTo enable Location Services, go to "
+            "System Preferences > Security & Privacy > Privacy > Location Services"
+            "and check the box next to {APP_NAME}."
         rumps.alert(
             title=f"Authorization status",
-            message=f"{APP_NAME} {__version__} authorization status: {status_str} ({status})",
+            message=f"{APP_NAME} {__version__}\nauthorization status: {status_str} ({status}){enable_str}",
             ok="OK",
         )
 
@@ -195,7 +221,7 @@ class Locationator(rumps.App):
         # Run the server in a separate thread
         self.log("start_server")
         self.server_thread = threading.Thread(
-            target=run_server, args=[self, self.port, LOCATION_TIMEOUT]
+            target=run_server, args=[self, self.port, REVERSE_GEOCODE_TIMEOUT]
         )
         self.server_thread.start()
         self.log(f"start_server done: {self.server_thread}")
@@ -249,6 +275,18 @@ class Locationator(rumps.App):
             geocoder.reverseGeocodeLocation_completionHandler_(
                 location, _geocode_completion_handler
             )
+
+    def on_current_location(self, sender):
+        """Request current location from Location Services"""
+        try:
+            location = self.update_current_location()
+            self.log(f"on_current_location: {location}")
+            if location.error:
+                rumps.alert(f"Error getting current location:\n{location.error}")
+            else:
+                rumps.alert(f"Current location:\n{location.location.as_str()}")
+        except LocationRequestError as e:
+            rumps.alert(f"Error getting current location:\n{e}")
 
     def on_install_remove_tools(self, sender):
         """Install or remove the command line tools"""
@@ -425,16 +463,17 @@ class Locationator(rumps.App):
                 location, _geocode_completion_handler
             )
 
-            start_t = time.time()
+            start_t = time.monotonic_ns()
+            timeout = REVERSE_GEOCODE_TIMEOUT * 1e9  # convert to nanoseconds
             while not result.done:
                 # wait for completion handler to set result.done
                 # use NSRunLoop to allow other events to be processed
                 # I tried this with using a threading.Event() and queue.Queue()
                 # as in the server but it blocked the run loop
                 NSRunLoop.currentRunLoop().runUntilDate_(
-                    NSDate.dateWithTimeIntervalSinceNow_(0.05)
+                    NSDate.dateWithTimeIntervalSinceNow_(WAIT_INTERVAL)
                 )
-                if time.time() - start_t > LOCATION_TIMEOUT:
+                if time.monotonic_ns() - start_t > timeout:
                     self.log("timeout waiting for reverse geocode")
                     raise ReverseGeocodeError("Timeout waiting for reverse geocode")
 
@@ -482,6 +521,68 @@ class Locationator(rumps.App):
                 location, geocode_completion_handler
             )
             self.log(f"reverse_geocode done: {geocode_queue=}")
+
+    def update_current_location(self, accuracy: float | None = None) -> LocationResult:
+        """Request the current location and set self._location"""
+        self.log("update_current_location: starting request")
+        if accuracy is not None:
+            self.location_manager.setDesiredAccuracy_(accuracy)
+        else:
+            self.location_manager.setDesiredAccuracy_(kCLLocationAccuracyBest)
+        self.log(f"update_current_location: starting request, {accuracy=}")
+        self.requestLocation()
+        start_t = time.monotonic_ns()
+        timeout = LOCATION_REQUEST_TIMEOUT * 1e9  # convert to nanoseconds
+        while self._location_request_in_progress:
+            # wait for request to finish
+            # use NSRunLoop to allow other events to be processed
+            # I tried this with using a threading.Event()
+            # as in the server but it blocked the run loop
+            NSRunLoop.currentRunLoop().runUntilDate_(
+                NSDate.dateWithTimeIntervalSinceNow_(WAIT_INTERVAL)
+            )
+            if time.monotonic_ns() - start_t > timeout:
+                self.log("timeout waiting for current location")
+                raise LocationRequestError("Timeout waiting for location request")
+        if self._location.error or not self._location.location:
+            self.log(f"Error getting location: {self._location}")
+            raise LocationRequestError(f"Error getting location: {self._location}")
+        self.log(f"update_current_location: {self._location}")
+        return self._location
+
+    def current_location_with_queue(
+        self, location_queue: queue.Queue, accuracy: float | None = None
+    ):
+        """Perform current location lookup; return result via queue"""
+        self.log(f"current_location_with_queue: {location_queue=}")
+        location = None
+        with objc.autorelease_pool():
+            try:
+                location = self.update_current_location(accuracy=accuracy)
+            except LocationRequestError as e:
+                self.log(f"current_location_with_queue error: {e}")
+                error_str = str(e)
+            else:
+                error_str = location.error
+            location_dict = (
+                location.location.asdict() if location and location.location else {}
+            )
+            location_dict["error"] = error_str
+
+            def _default(obj):
+                if isinstance(obj, datetime.datetime):
+                    return obj.isoformat()
+                raise TypeError(
+                    f"Object of type {obj.__class__.__name__} is not JSON serializable"
+                )
+
+            if error := location_dict["error"]:
+                location_queue.put((False, error))
+            else:
+                location_queue.put((True, json.dumps(location_dict, default=_default)))
+            self.log(
+                f"current_location_with_queue done: {location_queue=} {location_dict=}"
+            )
 
     def log(self, msg: str):
         """Log a message to unified log."""
@@ -598,112 +699,57 @@ class Locationator(rumps.App):
             open_kwargs["encoding"] = encoding
         return open(*open_args, **open_kwargs)
 
+    def startUpdatingLocation(self):
+        """Start location update"""
+        self.log(f"startUpdatingLocation: {self.location_manager}")
+        self.location_manager.startUpdatingLocation()
 
-def placemark_to_dict(placemark: CLPlacemark) -> dict:
-    """Convert a CLPlacemark to a dict
+    def stopUpdatingLocation(self):
+        """Stop location update"""
+        self.log(f"stopUpdatingLocation: {self.location_manager}")
+        self.location_manager.stopUpdatingLocation()
 
-    Args:
-        placemark: CLPlacemark object to convert
+    def requestLocation(self):
+        """Request current location
 
-    Returns: dict containing the placemark data
-    """
-    coordinate = placemark.location().coordinate()
-    timezone = placemark.timeZone()
-    postalAddress = postal_address_to_dict(placemark.postalAddress())
+        Note: This returns immediately; locationManager_didUpdateLocations_ will be called when the location is updated
+        To synchronously request a location, call update_current_location()
+        """
+        self.log(f"requestLocation: {self.location_manager}")
+        if self._location_request_in_progress:
+            # updated in locationManager_didUpdateLocations_
+            self.log("requestLocation: request in process")
+            return
+        # start a new location request
+        self._location_request_in_progress = True
+        self._location = LocationResult()
+        self.startUpdatingLocation()
+        self.location_manager.requestLocation()
 
-    areasOfInterest = []
-    if placemark.areasOfInterest():
-        for i in range(placemark.areasOfInterest().count()):
-            areasOfInterest.append(
-                str_or_none(placemark.areasOfInterest().objectAtIndex_(i))
+    def locationManager_didUpdateLocations_(
+        self, manager: CLLocationManager, locations: NSArray
+    ):
+        """Called when location is updated"""
+        self.log(f"didUpdateLocations: {locations=}")
+        if locations.count() < 1:
+            self.log("no locations returned")
+            self._location = LocationResult(None, None, "No locations returned")
+        else:
+            location = (
+                locations.lastObject()
+            )  # if more than one, most current is the last item
+            self._location = LocationResult(
+                Location_from_CLLocation(location), datetime.datetime.now(), None
             )
+        self._location_request_in_progress = False
+        self.stopUpdatingLocation()
 
-    placemark_dict = {
-        "location": (
-            coordinate.latitude,
-            coordinate.longitude,
-        ),
-        "name": str_or_none(placemark.name()),
-        "thoroughfare": str_or_none(placemark.thoroughfare()),
-        "subThoroughfare": str_or_none(placemark.subThoroughfare()),
-        "locality": str_or_none(placemark.locality()),
-        "subLocality": str_or_none(placemark.subLocality()),
-        "administrativeArea": str_or_none(placemark.administrativeArea()),
-        "subAdministrativeArea": str_or_none(placemark.subAdministrativeArea()),
-        "postalCode": str_or_none(placemark.postalCode()),
-        "ISOcountryCode": str_or_none(placemark.ISOcountryCode()),
-        "country": str_or_none(placemark.country()),
-        "postalAddress": postalAddress,
-        "inlandWater": str_or_none(placemark.inlandWater()),
-        "ocean": str_or_none(placemark.ocean()),
-        "areasOfInterest": areasOfInterest,
-        "timeZoneName": str_or_none(timezone.name()),
-        "timeZoneAbbreviation": str_or_none(timezone.abbreviation()),
-        "timeZoneSecondsFromGMT": int(timezone.secondsFromGMT()),
-    }
-
-    return placemark_dict
-
-
-def postal_address_to_dict(postalAddress: CNPostalAddress) -> dict:
-    """Convert a CNPostalAddress to a dict
-
-    Args:
-        postalAddress: CNPostalAddress object to convert
-
-    Returns: dict containing the postalAddress data
-    """
-    if not postalAddress:
-        return {
-            "street": "",
-            "city": "",
-            "state": "",
-            "country": "",
-            "postalCode": "",
-            "ISOCountryCode": "",
-            "subAdministrativeArea": "",
-            "subLocality": "",
-        }
-
-    postalAddress_dict = {
-        "street": str_or_none(postalAddress.street()),
-        "city": str_or_none(postalAddress.city()),
-        "state": str_or_none(postalAddress.state()),
-        "country": str_or_none(postalAddress.country()),
-        "postalCode": str_or_none(postalAddress.postalCode()),
-        "ISOCountryCode": str_or_none(postalAddress.ISOCountryCode()),
-        "subAdministrativeArea": str_or_none(postalAddress.subAdministrativeArea()),
-        "subLocality": str_or_none(postalAddress.subLocality()),
-    }
-
-    return postalAddress_dict
-
-
-def get_lat_long_from_string(s: str) -> tuple[float, float]:
-    """Get latitude and longitude from a string
-
-    Args:
-        s: string with values which may be separated by comma or space
-
-    Returns: tuple of latitude and longitude as floats
-
-    Raises:
-        ValueError: if latitude or longitude is invalid or cannot be parsed
-    """
-    try:
-        lat, lng = s.split(",")
-    except ValueError:
-        try:
-            lat, lng = s.split(" ")
-        except ValueError:
-            raise ValueError(f"Could not parse latitude/longitude from string: {s}")
-    lat = lat.strip()
-    lng = lng.strip()
-    if not validate_latitude(lat):
-        raise ValueError(f"Invalid latitude: {lat}")
-    if not validate_longitude(lng):
-        raise ValueError(f"Invalid longitude: {lng}")
-    return lat, lng
+    def locationManager_didFailWithError_(self, manager: CLLocationManager, error: Any):
+        """Handle errors from CLLocationManager"""
+        self.log(f"locationManager_didFailWithError_: {manager} {error}")
+        self._location = LocationResult(None, None, error)
+        self._location_request_in_progress = False
+        self.stopUpdatingLocation()
 
 
 def serviceSelector(fn):
@@ -848,54 +894,6 @@ class ServiceProvider(NSObject):
                 return ErrorValue(e)
 
         return None
-
-
-def format_result_dict(d: dict) -> str:
-    """Format a reverse geocode result dict for display"""
-    result_dict = flatten_dict(d)
-    for key, value in result_dict.items():
-        if isinstance(value, (list, tuple)):
-            result_dict[key] = ", ".join(str(v) for v in value)
-    return "\n".join(f"{key}: {value}" for key, value in result_dict.items())
-
-
-def write_xmp_metadata(filepath: str, results: dict[str, Any]) -> dict[str, Any]:
-    """Write reverse geolocation-related fields to file metadata
-
-    Args:
-        filename (str): Path to file
-        results (dict): Reverse geocode results
-
-    Note: The following XMP fields are written (parentheses indicate the corresponding
-    reverse geocode result field):
-
-    - XMP:CountryCode / Iptc4xmpCore:CountryCode (ISOcountryCode)
-    - XMP:Country / photoshop:Country (country)
-    - XMP:State / photoshop:State (administrativeArea)
-    - XMP:City / photoshop:City (locality)
-    - XMP:Location / Iptc4xmpCore:Location (name)
-    """
-
-    metadata = {
-        "Iptc4xmpCore:CountryCode": results["ISOcountryCode"],
-        "photoshop:Country": results["country"],
-        "photoshop:State": results["administrativeArea"],
-        "photoshop:City": results["locality"],
-        "Iptc4xmpCore:Location": results["name"],
-    }
-
-    metadata_ref = load_image_metadata_ref(filepath)
-    metadata_ref_mutable = metadata_ref_create_mutable(metadata_ref)
-    for key, value in metadata.items():
-        metadata_ref_mutable = metadata_ref_set_tag(metadata_ref_mutable, key, value)
-
-    metadata_ref_write_to_file(filepath, metadata_ref_mutable)
-
-    # These are Core Foundation objects that need to be released
-    del metadata_ref
-    del metadata_ref_mutable
-
-    return metadata
 
 
 if __name__ == "__main__":
