@@ -229,7 +229,7 @@ Locationator will install two services accessible via the Services menu:
 - `Locationator: reverse geocode`: extracts the latitude and longitude from the selected image and performs a reverse geocode lookup. The result is copied to the clipboard.
 - `Locationator: write XMP data`: extracts the latitude and longitude from the selected image and writes the reverse geocode data to the XMP metadata of the image.
 
->*Note*: the `Locationator: write XMP data` service does not work with RAW image.
+>*Note*: the `Locationator: write XMP data` service does not work with RAW images.
 
 ## Command Line Tools
 
