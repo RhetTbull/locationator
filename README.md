@@ -141,7 +141,7 @@ Server: SimpleHTTP/0.6 Python/3.11.6
 
 Retrieve the current location of the server. This endpoint accepts GET requests and returns the current location of the server.
 
-**URL** : `/current_location`
+**URL** : `/current_location` or `/current_location?accuracy=string`
 
 **Method** : `GET`
 
